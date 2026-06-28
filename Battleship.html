@@ -6,7 +6,7 @@
 <meta name="theme-color" content="#061626">
 <title>Naval Strike: Battleship Online</title>
 <script src="https://cdn.tailwindcss.com"></script>
-<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js" onerror="window.__peerjsLoadFailed=true"></script>
 <style>
   :root{ color-scheme: dark; }
   body{
@@ -381,15 +381,41 @@ function destroyPeer(){
   if(G.peer){ try{ G.peer.destroy(); }catch(e){} G.peer=null; }
 }
 
+function libsAvailable(){
+  if(window.__peerjsLoadFailed || typeof Peer === 'undefined'){
+    toast("Couldn't load the multiplayer library. Check your internet connection and reload the page.", 5000);
+    showScreen('screen-menu');
+    return false;
+  }
+  return true;
+}
+
 function createAsHost(attempt){
   attempt = attempt||1;
+  if(!libsAvailable()) return;
   if(attempt>6){ toast('Could not create a game. Check your connection and try again.'); showScreen('screen-menu'); return; }
+  showScreen('screen-connecting');
+  $('connecting-text').textContent = 'Creating game…';
   const code = randCode();
-  const peer = new Peer(PEER_PREFIX+code.toLowerCase(), { config: ICE_CONFIG });
+  let peer;
+  try{
+    peer = new Peer(PEER_PREFIX+code.toLowerCase(), { config: ICE_CONFIG });
+  }catch(e){
+    toast('Could not start the multiplayer library: '+e.message, 5000);
+    showScreen('screen-menu');
+    return;
+  }
   G.peer = peer; G.code = code; G.role='host';
   let settled=false;
+  const creationTimeout = setTimeout(()=>{
+    if(settled) return;
+    try{ peer.destroy(); }catch(e){}
+    toast('Taking longer than expected — retrying…');
+    createAsHost(attempt+1);
+  }, 12000);
   peer.on('open', ()=>{
     settled=true;
+    clearTimeout(creationTimeout);
     $('create-code').textContent = code;
     showScreen('screen-create');
     peer.on('connection', conn=>{
@@ -399,20 +425,29 @@ function createAsHost(attempt){
   });
   peer.on('error', err=>{
     if(settled) { handlePeerRuntimeError(err); return; }
+    clearTimeout(creationTimeout);
     if(err.type==='unavailable-id'){
       try{ peer.destroy(); }catch(e){}
       createAsHost(attempt+1);
     } else {
-      toast('Network error creating game: '+err.type);
+      toast('Network error creating game: '+err.type, 4000);
       showScreen('screen-menu');
     }
   });
 }
 
 function joinAsGuest(code){
+  if(!libsAvailable()) return;
   showScreen('screen-connecting');
   $('connecting-text').textContent = 'Connecting to '+code+'…';
-  const peer = new Peer({ config: ICE_CONFIG });
+  let peer;
+  try{
+    peer = new Peer({ config: ICE_CONFIG });
+  }catch(e){
+    toast('Could not start the multiplayer library: '+e.message, 5000);
+    showScreen('screen-join');
+    return;
+  }
   G.peer = peer; G.role='guest'; G.code=code;
   let connectedTimeout = setTimeout(()=>{
     toast('Connection timed out. Check the code and try again.');
