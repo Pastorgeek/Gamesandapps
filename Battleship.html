@@ -1,0 +1,987 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#061626">
+<title>Naval Strike: Battleship Online</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+<style>
+  :root{ color-scheme: dark; }
+  body{
+    height:100vh; height:100dvh; margin:0; overflow:hidden;
+    overscroll-behavior:none; touch-action:none; user-select:none; -webkit-user-select:none;
+    font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;
+    background:radial-gradient(circle at 50% -10%, #123250 0%, #061626 55%, #02080f 100%);
+    color:#e6f1ff;
+  }
+  .screen{ display:none; position:absolute; inset:0; flex-direction:column; }
+  .screen.active{ display:flex; }
+  .scrollv{ overflow-y:auto; -webkit-overflow-scrolling:touch; touch-action:pan-y; }
+
+  .glass{
+    background:rgba(15,35,58,0.65);
+    border:1px solid rgba(120,180,255,0.18);
+    backdrop-filter:blur(10px);
+    box-shadow:0 8px 30px rgba(0,0,0,0.35);
+  }
+  .btn{
+    border-radius:14px; font-weight:700; letter-spacing:.02em;
+    transition:transform .12s ease, box-shadow .12s ease, opacity .12s ease;
+    -webkit-tap-highlight-color:transparent;
+  }
+  .btn:active{ transform:scale(0.96); }
+  .btn-primary{ background:linear-gradient(135deg,#2dd4bf,#0ea5e9); color:#04141f; box-shadow:0 6px 18px rgba(14,165,233,0.35);}
+  .btn-secondary{ background:rgba(255,255,255,0.08); color:#e6f1ff; border:1px solid rgba(255,255,255,0.15); }
+  .btn-danger{ background:linear-gradient(135deg,#f87171,#dc2626); color:#1a0303; }
+  .btn:disabled{ opacity:.4; pointer-events:none; }
+
+  .code-display{
+    font-family:'Courier New',monospace; letter-spacing:.35em; font-weight:800;
+    font-size:2.4rem; color:#7dd3fc; text-shadow:0 0 18px rgba(56,189,248,0.5);
+  }
+
+  .grid10{
+    display:grid; grid-template-columns:repeat(10,1fr); grid-template-rows:repeat(10,1fr);
+    gap:3px; width:100%; aspect-ratio:1/1; max-width:100%;
+  }
+  .cell{
+    position:relative; border-radius:4px; background:rgba(56,189,248,0.08);
+    border:1px solid rgba(125,211,252,0.15);
+    display:flex; align-items:center; justify-content:center;
+    overflow:hidden;
+  }
+  .cell.tappable{ background:rgba(56,189,248,0.14); }
+  .cell.ship{ background:linear-gradient(135deg,#475569,#64748b); border-color:rgba(226,232,240,0.5); }
+  .cell.ship.sunkship{ background:linear-gradient(135deg,#3f1d1d,#5b2222); }
+  .cell.pending{ background:rgba(250,204,21,0.25); }
+  .cell .mark{ font-size:0.95rem; line-height:1; animation:pop .25s cubic-bezier(.175,.885,.32,1.275) forwards; }
+  .cell.hitcell{ background:rgba(220,38,38,0.35); }
+  .cell.misscell{ background:rgba(14,165,233,0.18); }
+  .cell.sunkcell{ background:rgba(120,10,10,0.55); }
+
+  @keyframes pop{ 0%{transform:scale(0.3); opacity:0;} 60%{transform:scale(1.2);} 100%{transform:scale(1); opacity:1;} }
+  @keyframes shake{ 0%,100%{transform:translateX(0);} 25%{transform:translateX(-6px);} 75%{transform:translateX(6px);} }
+  .shake{ animation:shake .35s ease-in-out; }
+  @keyframes splash{ 0%{transform:scale(0.2); opacity:.9;} 100%{transform:scale(1.8); opacity:0;} }
+  .splash-ring{ position:absolute; inset:0; border:2px solid #38bdf8; border-radius:50%; animation:splash .6s ease-out forwards; }
+  @keyframes flashbg{ 0%{ background-color:rgba(248,113,113,0.6);} 100%{ background-color:transparent;} }
+  .flash{ animation:flashbg .6s ease-out; }
+
+  .fleet-chip{ border-radius:10px; padding:8px 10px; display:flex; align-items:center; gap:8px; cursor:pointer; }
+  .fleet-chip.selected{ outline:2px solid #2dd4bf; }
+  .fleet-chip.placed{ opacity:.55; }
+  .ship-dot{ width:9px; height:9px; border-radius:2px; background:#94a3b8; }
+
+  .toast{
+    background:rgba(10,25,40,0.92); border:1px solid rgba(125,211,252,0.3); color:#e6f1ff;
+    padding:10px 16px; border-radius:12px; font-size:.85rem; font-weight:600;
+    box-shadow:0 4px 16px rgba(0,0,0,0.4); animation:pop .25s ease forwards;
+  }
+
+  .tab-btn{ flex:1; padding:10px; text-align:center; font-weight:700; border-radius:12px; }
+  .tab-btn.active{ background:rgba(56,189,248,0.2); color:#7dd3fc; }
+
+  .timer-ring{ width:46px; height:46px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:800; font-size:.85rem; }
+
+  .confetti{ position:fixed; top:-10px; width:8px; height:14px; opacity:.95; pointer-events:none; z-index:90; animation:fall linear forwards; }
+  @keyframes fall{ to{ transform:translateY(110vh) rotate(540deg); opacity:0.2; } }
+
+  .spinner{ width:46px; height:46px; border-radius:50%; border:4px solid rgba(125,211,252,0.25); border-top-color:#38bdf8; animation:spin 1s linear infinite; }
+  @keyframes spin{ to{ transform:rotate(360deg); } }
+
+  .log-feed{ font-size:.78rem; color:#9fc8e8; }
+  .log-feed div{ padding:2px 0; border-bottom:1px solid rgba(255,255,255,0.05); }
+</style>
+</head>
+<body class="relative">
+
+<div id="toast-container" class="fixed top-3 left-1/2 -translate-x-1/2 z-[100] flex flex-col gap-2 items-center pointer-events-none"></div>
+<div id="confetti-layer" class="fixed inset-0 z-[95] pointer-events-none overflow-hidden"></div>
+
+<!-- MENU -->
+<div id="screen-menu" class="screen active items-center justify-center p-4">
+  <div class="glass rounded-2xl p-6 w-full max-w-sm text-center">
+    <h1 class="text-4xl font-black mb-1 tracking-tight">⚓ NAVAL STRIKE</h1>
+    <div class="text-cyan-300/70 text-xs uppercase tracking-[0.4em] mb-6">Online Battleship</div>
+    <button id="btn-create" class="btn btn-primary w-full py-4 mb-3 text-lg">Create Game</button>
+    <button id="btn-join" class="btn btn-secondary w-full py-4 mb-3 text-lg">Join Game</button>
+    <div class="flex items-center justify-between mt-4 text-sm text-cyan-200/70">
+      <span>Sound</span>
+      <button id="btn-sound-toggle" class="btn btn-secondary px-4 py-2">🔊 On</button>
+    </div>
+    <p class="text-[11px] text-cyan-200/40 mt-5 leading-relaxed">Two players, two phones, one connection — fired shots travel directly between your devices over a secure peer-to-peer link. No accounts, no servers, just naval warfare.</p>
+  </div>
+</div>
+
+<!-- CREATE / WAITING FOR GUEST -->
+<div id="screen-create" class="screen items-center justify-center p-4">
+  <div class="glass rounded-2xl p-6 w-full max-w-sm text-center">
+    <div class="text-cyan-200/70 text-xs uppercase tracking-[0.3em] mb-2">Your Game Code</div>
+    <div id="create-code" class="code-display mb-3">------</div>
+    <div class="flex gap-2 mb-4">
+      <button id="btn-copy-code" class="btn btn-secondary flex-1 py-3">📋 Copy</button>
+      <button id="btn-share-code" class="btn btn-secondary flex-1 py-3">📤 Share</button>
+    </div>
+    <div class="flex items-center justify-center gap-2 text-cyan-200/70 text-sm mb-4">
+      <div class="spinner" style="width:20px;height:20px;border-width:2px;"></div>
+      <span>Waiting for opponent to join…</span>
+    </div>
+    <button id="btn-create-cancel" class="btn btn-secondary w-full py-3">Cancel</button>
+  </div>
+</div>
+
+<!-- JOIN -->
+<div id="screen-join" class="screen items-center justify-center p-4">
+  <div class="glass rounded-2xl p-6 w-full max-w-sm text-center">
+    <div class="text-cyan-200/70 text-xs uppercase tracking-[0.3em] mb-3">Enter Game Code</div>
+    <input id="join-input" maxlength="5" autocapitalize="characters" autocomplete="off" spellcheck="false"
+      class="w-full text-center text-3xl tracking-[0.3em] font-bold bg-black/30 border border-cyan-400/30 rounded-xl py-3 mb-4 text-cyan-200 outline-none" placeholder="ABCDE">
+    <button id="btn-join-go" class="btn btn-primary w-full py-4 mb-3 text-lg">Connect</button>
+    <button id="btn-join-cancel" class="btn btn-secondary w-full py-3">Cancel</button>
+  </div>
+</div>
+
+<!-- CONNECTING -->
+<div id="screen-connecting" class="screen items-center justify-center p-4">
+  <div class="glass rounded-2xl p-8 w-full max-w-sm text-center flex flex-col items-center gap-4">
+    <div class="spinner"></div>
+    <div id="connecting-text" class="text-cyan-200/80 text-sm">Connecting…</div>
+    <button id="btn-connecting-cancel" class="btn btn-secondary w-full py-3">Cancel</button>
+  </div>
+</div>
+
+<!-- PLACEMENT -->
+<div id="screen-placement" class="screen flex-col p-3 scrollv">
+  <div class="text-center mb-2">
+    <h2 class="text-xl font-bold">Deploy Your Fleet</h2>
+    <p class="text-cyan-200/60 text-xs">Tap a ship, then tap the grid to place it. Tap a placed ship to pick it up.</p>
+  </div>
+  <div class="grid-wrapper mx-auto w-full max-w-[420px] mb-3">
+    <div id="placement-grid" class="grid10"></div>
+  </div>
+  <div class="flex gap-2 justify-center mb-3">
+    <button id="btn-rotate" class="btn btn-secondary px-4 py-2">🔄 Rotate: <span id="orientation-label">Horizontal</span></button>
+  </div>
+  <div id="fleet-list" class="flex flex-wrap gap-2 justify-center mb-3 max-w-[460px] mx-auto"></div>
+  <div class="flex gap-2 justify-center mb-2">
+    <button id="btn-randomize" class="btn btn-secondary px-4 py-2 text-sm">🎲 Auto-Place</button>
+    <button id="btn-clear" class="btn btn-secondary px-4 py-2 text-sm">🗑️ Clear</button>
+  </div>
+  <button id="btn-ready" class="btn btn-primary w-full max-w-[420px] mx-auto py-3 mb-2" disabled>Ready for Battle</button>
+  <div id="placement-waiting" class="hidden text-center text-cyan-200/70 text-sm mb-2">
+    <div class="flex items-center justify-center gap-2"><div class="spinner" style="width:18px;height:18px;border-width:2px;"></div><span>Waiting for opponent to finish placing ships…</span></div>
+    <button id="btn-unready" class="btn btn-secondary px-4 py-2 mt-2 text-xs">Edit Placement</button>
+  </div>
+</div>
+
+<!-- BATTLE -->
+<div id="screen-battle" class="screen flex-col p-3 scrollv">
+  <div class="flex items-center justify-between mb-2 glass rounded-xl px-3 py-2">
+    <div id="turn-indicator" class="font-bold text-sm">—</div>
+    <div class="flex items-center gap-2">
+      <div id="timer-ring" class="timer-ring glass">--</div>
+      <button id="btn-sound-toggle-battle" class="btn btn-secondary px-3 py-2 text-xs">🔊</button>
+      <button id="btn-quit" class="btn btn-danger px-3 py-2 text-xs">Quit</button>
+    </div>
+  </div>
+
+  <div class="flex gap-2 mb-2">
+    <button id="tab-attack" class="tab-btn active">🎯 Enemy Waters</button>
+    <button id="tab-defense" class="tab-btn">🛡️ My Fleet</button>
+  </div>
+
+  <div id="pane-attack" class="flex-col">
+    <div class="grid-wrapper mx-auto w-full max-w-[420px] mb-2">
+      <div id="attack-grid" class="grid10"></div>
+    </div>
+  </div>
+  <div id="pane-defense" class="flex-col hidden">
+    <div class="grid-wrapper mx-auto w-full max-w-[420px] mb-2">
+      <div id="defense-grid" class="grid10"></div>
+    </div>
+  </div>
+
+  <div class="flex gap-2 mt-1">
+    <div class="glass rounded-xl p-2 flex-1">
+      <div class="text-[10px] uppercase tracking-wide text-cyan-300/60 mb-1">Your Fleet</div>
+      <div id="my-fleet-status" class="text-xs"></div>
+    </div>
+    <div class="glass rounded-xl p-2 flex-1">
+      <div class="text-[10px] uppercase tracking-wide text-cyan-300/60 mb-1">Enemy Fleet</div>
+      <div id="enemy-fleet-status" class="text-xs"></div>
+    </div>
+  </div>
+
+  <div class="glass rounded-xl p-2 mt-2 max-h-20 overflow-y-auto log-feed" id="log-feed"></div>
+</div>
+
+<!-- GAME OVER -->
+<div id="screen-gameover" class="screen items-center justify-center p-4">
+  <div class="glass rounded-2xl p-6 w-full max-w-sm text-center">
+    <h1 id="gameover-title" class="text-4xl font-black mb-2">VICTORY</h1>
+    <div id="gameover-stats" class="text-cyan-200/70 text-sm mb-5 space-y-1"></div>
+    <button id="btn-rematch" class="btn btn-primary w-full py-4 mb-3 text-lg">Play Again</button>
+    <div id="rematch-status" class="text-cyan-200/60 text-xs mb-3 hidden"></div>
+    <button id="btn-main-menu" class="btn btn-secondary w-full py-3">Main Menu</button>
+  </div>
+</div>
+
+<!-- DISCONNECTED OVERLAY -->
+<div id="overlay-disconnected" class="screen items-center justify-center p-4" style="z-index:200;">
+  <div class="glass rounded-2xl p-6 w-full max-w-sm text-center">
+    <div class="text-4xl mb-2">📡</div>
+    <h2 class="text-xl font-bold mb-2">Connection Lost</h2>
+    <p id="disconnected-reason" class="text-cyan-200/70 text-sm mb-5">Your opponent's connection was lost.</p>
+    <button id="btn-disconnected-ok" class="btn btn-primary w-full py-3">Return to Menu</button>
+  </div>
+</div>
+
+<script>
+(function(){
+"use strict";
+
+/* ---------------- Constants ---------------- */
+const SHIP_DEFS = [
+  {id:'carrier', name:'Carrier', size:5},
+  {id:'battleship', name:'Battleship', size:4},
+  {id:'cruiser', name:'Cruiser', size:3},
+  {id:'submarine', name:'Submarine', size:3},
+  {id:'destroyer', name:'Destroyer', size:2},
+];
+const GRID_N = 10;
+const CODE_CHARS = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+const PEER_PREFIX = 'nstrk5-';
+const TURN_SECONDS = 45;
+const ICE_CONFIG = {
+  iceServers: [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+    { urls: 'turn:openrelay.metered.ca:80', username:'openrelayproject', credential:'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443', username:'openrelayproject', credential:'openrelayproject' },
+    { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username:'openrelayproject', credential:'openrelayproject' },
+  ]
+};
+
+/* ---------------- State ---------------- */
+const G = {
+  peer:null, conn:null, role:null, code:null,
+  myShips:[], myDefenseGrid:emptyGrid(), enemyAttackGrid:emptyGrid(),
+  enemySunkShipIds:new Set(),
+  selectedShipId:null, orientation:'H',
+  iReady:false, opponentReady:false,
+  isMyTurn:false, gameStarted:false, gameOver:false, awaitingResult:false,
+  rematchMine:false, rematchTheirs:false, lastStarter:null,
+  stats:{shotsFired:0, hits:0},
+  heartbeatTimer:null, watchdogTimer:null, lastMsgTime:0,
+  turnTimer:null, turnSecondsLeft:0,
+  soundOn: localStorage.getItem('nstrk-sound') !== 'off',
+  audioCtx:null,
+};
+
+function emptyGrid(){ return Array.from({length:GRID_N},()=>Array(GRID_N).fill(null)); }
+
+/* ---------------- Utility / UI ---------------- */
+function $(id){ return document.getElementById(id); }
+function showScreen(id){
+  document.querySelectorAll('.screen').forEach(el=>el.classList.remove('active'));
+  $(id).classList.add('active');
+}
+function toast(msg, ms=2400){
+  const el = document.createElement('div');
+  el.className='toast';
+  el.textContent=msg;
+  $('toast-container').appendChild(el);
+  setTimeout(()=>{ el.style.transition='opacity .3s'; el.style.opacity='0'; setTimeout(()=>el.remove(),300); }, ms);
+}
+function logLine(msg){
+  const feed = $('log-feed');
+  const d = document.createElement('div');
+  d.textContent = msg;
+  feed.appendChild(d);
+  feed.scrollTop = feed.scrollHeight;
+}
+function vibrate(pattern){ if(navigator.vibrate){ try{ navigator.vibrate(pattern); }catch(e){} } }
+
+/* ---------------- Audio ---------------- */
+function getCtx(){
+  if(!G.audioCtx){
+    try{ G.audioCtx = new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ return null; }
+  }
+  if(G.audioCtx.state==='suspended'){ G.audioCtx.resume(); }
+  return G.audioCtx;
+}
+function beep(freq, dur, type='sine', vol=0.2, delay=0){
+  if(!G.soundOn) return;
+  const ctx = getCtx(); if(!ctx) return;
+  try{
+    const o=ctx.createOscillator(), g=ctx.createGain();
+    o.type=type; o.frequency.value=freq;
+    g.gain.value=vol;
+    o.connect(g); g.connect(ctx.destination);
+    const t0 = ctx.currentTime+delay;
+    o.start(t0);
+    g.gain.exponentialRampToValueAtTime(0.0001, t0+dur);
+    o.stop(t0+dur+0.02);
+  }catch(e){}
+}
+const sounds = {
+  fire:()=>beep(620,0.08,'square',0.15),
+  miss:()=>{ beep(900,0.12,'sine',0.12); beep(500,0.18,'sine',0.08,0.05); },
+  hit:()=>{ beep(160,0.25,'sawtooth',0.25); vibrate(60); },
+  sunk:()=>{ beep(300,0.15,'sawtooth',0.2); beep(180,0.2,'sawtooth',0.2,0.12); beep(100,0.3,'sawtooth',0.2,0.26); vibrate([60,40,60]); },
+  win:()=>{ [523,659,784,1046].forEach((f,i)=>beep(f,0.22,'triangle',0.2,i*0.14)); },
+  lose:()=>{ [400,340,260,180].forEach((f,i)=>beep(f,0.3,'sawtooth',0.18,i*0.18)); vibrate([100,60,100]); },
+  toggle:()=>beep(700,0.06,'sine',0.12),
+  notify:()=>beep(820,0.1,'sine',0.15),
+};
+function refreshSoundButtons(){
+  const label = G.soundOn ? '🔊 On' : '🔇 Off';
+  $('btn-sound-toggle').textContent = label;
+  $('btn-sound-toggle-battle').textContent = G.soundOn ? '🔊' : '🔇';
+}
+function toggleSound(){
+  G.soundOn = !G.soundOn;
+  localStorage.setItem('nstrk-sound', G.soundOn ? 'on':'off');
+  refreshSoundButtons();
+  if(G.soundOn) sounds.toggle();
+}
+$('btn-sound-toggle').addEventListener('click', toggleSound);
+$('btn-sound-toggle-battle').addEventListener('click', toggleSound);
+refreshSoundButtons();
+
+/* ---------------- Confetti ---------------- */
+function spawnConfetti(){
+  const colors = ['#2dd4bf','#38bdf8','#fbbf24','#f87171','#a78bfa'];
+  const layer = $('confetti-layer');
+  for(let i=0;i<60;i++){
+    const c = document.createElement('div');
+    c.className='confetti';
+    c.style.left = Math.random()*100+'vw';
+    c.style.background = colors[Math.floor(Math.random()*colors.length)];
+    c.style.animationDuration = (1.8+Math.random()*1.4)+'s';
+    c.style.animationDelay = (Math.random()*0.4)+'s';
+    layer.appendChild(c);
+    setTimeout(()=>c.remove(), 3600);
+  }
+}
+
+/* ---------------- Room code ---------------- */
+function randCode(){
+  let s='';
+  for(let i=0;i<5;i++) s += CODE_CHARS[Math.floor(Math.random()*CODE_CHARS.length)];
+  return s;
+}
+
+/* ---------------- Networking ---------------- */
+function destroyPeer(){
+  clearHeartbeat();
+  if(G.conn){ try{ G.conn.close(); }catch(e){} G.conn=null; }
+  if(G.peer){ try{ G.peer.destroy(); }catch(e){} G.peer=null; }
+}
+
+function createAsHost(attempt){
+  attempt = attempt||1;
+  if(attempt>6){ toast('Could not create a game. Check your connection and try again.'); showScreen('screen-menu'); return; }
+  const code = randCode();
+  const peer = new Peer(PEER_PREFIX+code.toLowerCase(), { config: ICE_CONFIG });
+  G.peer = peer; G.code = code; G.role='host';
+  let settled=false;
+  peer.on('open', ()=>{
+    settled=true;
+    $('create-code').textContent = code;
+    showScreen('screen-create');
+    peer.on('connection', conn=>{
+      if(G.conn){ try{ conn.close(); }catch(e){} return; } // only one guest allowed
+      setupConnection(conn,'host');
+    });
+  });
+  peer.on('error', err=>{
+    if(settled) { handlePeerRuntimeError(err); return; }
+    if(err.type==='unavailable-id'){
+      try{ peer.destroy(); }catch(e){}
+      createAsHost(attempt+1);
+    } else {
+      toast('Network error creating game: '+err.type);
+      showScreen('screen-menu');
+    }
+  });
+}
+
+function joinAsGuest(code){
+  showScreen('screen-connecting');
+  $('connecting-text').textContent = 'Connecting to '+code+'…';
+  const peer = new Peer({ config: ICE_CONFIG });
+  G.peer = peer; G.role='guest'; G.code=code;
+  let connectedTimeout = setTimeout(()=>{
+    toast('Connection timed out. Check the code and try again.');
+    destroyPeer();
+    showScreen('screen-join');
+  }, 15000);
+
+  peer.on('open', ()=>{
+    const conn = peer.connect(PEER_PREFIX+code.toLowerCase(), { reliable:true });
+    conn.on('open', ()=>{ clearTimeout(connectedTimeout); setupConnection(conn,'guest'); });
+    conn.on('error', ()=>{}); // surfaced via peer error too
+  });
+  peer.on('error', err=>{
+    clearTimeout(connectedTimeout);
+    if(err.type==='peer-unavailable'){
+      toast('Game code not found. Double-check and try again.');
+    } else {
+      toast('Connection error: '+err.type);
+    }
+    destroyPeer();
+    showScreen('screen-join');
+  });
+}
+
+function setupConnection(conn, role){
+  G.conn = conn;
+  G.lastMsgTime = Date.now();
+  conn.on('data', data=>{
+    G.lastMsgTime = Date.now();
+    handleMessage(data);
+  });
+  conn.on('close', ()=> onDisconnected('Your opponent disconnected.'));
+  conn.on('error', ()=> onDisconnected('Connection error encountered.'));
+  startHeartbeat();
+  resetGameState();
+  showScreen('screen-placement');
+  renderPlacementScreen();
+  toast(role==='host' ? 'Opponent connected!' : 'Connected to game!');
+}
+
+function send(obj){
+  if(G.conn && G.conn.open){
+    try{ G.conn.send(obj); }catch(e){}
+  }
+}
+
+function startHeartbeat(){
+  clearHeartbeat();
+  G.heartbeatTimer = setInterval(()=> send({t:'ping'}), 5000);
+  G.watchdogTimer = setInterval(()=>{
+    if(Date.now() - G.lastMsgTime > 18000){
+      onDisconnected('Lost contact with your opponent (network issue).');
+    }
+  }, 4000);
+}
+function clearHeartbeat(){
+  if(G.heartbeatTimer) clearInterval(G.heartbeatTimer);
+  if(G.watchdogTimer) clearInterval(G.watchdogTimer);
+  G.heartbeatTimer=null; G.watchdogTimer=null;
+}
+
+function onDisconnected(reason){
+  if($('overlay-disconnected').classList.contains('active')) return;
+  clearHeartbeat();
+  stopTurnTimer();
+  $('disconnected-reason').textContent = reason;
+  showScreen('overlay-disconnected');
+}
+$('btn-disconnected-ok').addEventListener('click', ()=>{
+  destroyPeer();
+  resetGameState();
+  showScreen('screen-menu');
+});
+
+function handlePeerRuntimeError(err){
+  onDisconnected('Network error: '+(err && err.type ? err.type : 'unknown'));
+}
+
+/* ---------------- Message protocol ----------------
+  {t:'ready'}
+  {t:'unready'}
+  {t:'start', first:'host'|'guest'}
+  {t:'fire', x, y}
+  {t:'result', x, y, hit, sunk, shipId, shipName, gameOver}
+  {t:'rematch'}
+  {t:'ping'} / {t:'pong'}
+  {t:'leave'}
+------------------------------------------------------*/
+function handleMessage(msg){
+  if(!msg || typeof msg !== 'object') return;
+  switch(msg.t){
+    case 'ping': send({t:'pong'}); break;
+    case 'pong': break;
+    case 'ready':
+      G.opponentReady = true;
+      maybeStartBattle();
+      break;
+    case 'start':
+      G.gameStarted = true;
+      G.lastStarter = msg.first;
+      beginBattle(msg.first);
+      break;
+    case 'unready':
+      G.opponentReady = false;
+      if($('placement-waiting').classList.contains('hidden')===false){
+        toast('Opponent is editing their fleet placement.');
+      }
+      break;
+    case 'fire':
+      handleIncomingFire(msg.x, msg.y);
+      break;
+    case 'result':
+      handleIncomingResult(msg);
+      break;
+    case 'rematch':
+      G.rematchTheirs = true;
+      checkRematchBoth();
+      break;
+    case 'leave':
+      onDisconnected('Your opponent left the game.');
+      break;
+  }
+}
+
+/* ---------------- Game reset ---------------- */
+function resetGameState(){
+  G.myShips=[]; G.myDefenseGrid=emptyGrid(); G.enemyAttackGrid=emptyGrid();
+  G.enemySunkShipIds=new Set();
+  G.selectedShipId=null; G.orientation='H';
+  G.iReady=false; G.opponentReady=false;
+  G.isMyTurn=false; G.gameStarted=false; G.gameOver=false; G.awaitingResult=false;
+  G.rematchMine=false; G.rematchTheirs=false;
+  G.stats={shotsFired:0, hits:0};
+  stopTurnTimer();
+  $('log-feed').innerHTML='';
+  $('placement-waiting').classList.add('hidden');
+  $('btn-ready').disabled = true;
+  $('btn-ready').classList.remove('hidden');
+}
+
+/* ---------------- Placement screen ---------------- */
+function shipCellsFor(x,y,size,orientation){
+  let sx=x, sy=y;
+  if(orientation==='H'){
+    sx = Math.min(Math.max(x,0), GRID_N-size);
+    return Array.from({length:size},(_,i)=>({x:sx+i,y}));
+  } else {
+    sy = Math.min(Math.max(y,0), GRID_N-size);
+    return Array.from({length:size},(_,i)=>({x, y:sy+i}));
+  }
+}
+function occupiedCellSet(excludeShipId){
+  const s = new Set();
+  G.myShips.forEach(sh=>{
+    if(sh.id===excludeShipId) return;
+    sh.cells.forEach(c=>s.add(c.x+','+c.y));
+  });
+  return s;
+}
+function selectShip(id){
+  const existing = G.myShips.find(s=>s.id===id);
+  if(existing){
+    G.myShips = G.myShips.filter(s=>s.id!==id);
+  }
+  G.selectedShipId = id;
+  renderPlacementScreen();
+}
+function tryPlaceShip(id, x, y){
+  const def = SHIP_DEFS.find(d=>d.id===id);
+  if(!def) return;
+  const cells = shipCellsFor(x,y,def.size,G.orientation);
+  const occ = occupiedCellSet(id);
+  const overlap = cells.some(c=>occ.has(c.x+','+c.y));
+  if(overlap){
+    toast("Ships can't overlap.");
+    $('placement-grid').classList.add('shake');
+    setTimeout(()=>$('placement-grid').classList.remove('shake'),350);
+    return;
+  }
+  G.myShips = G.myShips.filter(s=>s.id!==id);
+  G.myShips.push({id, name:def.name, size:def.size, cells, hits:new Array(def.size).fill(false)});
+  G.selectedShipId = null;
+  renderPlacementScreen();
+  beep(500,0.05,'sine',0.1);
+}
+function randomizeAll(){
+  for(let attempt=0; attempt<200; attempt++){
+    const ships=[]; const occ = new Set();
+    let ok=true;
+    for(const def of SHIP_DEFS){
+      let placed=false;
+      for(let tries=0; tries<60; tries++){
+        const orientation = Math.random()<0.5?'H':'V';
+        const x = Math.floor(Math.random()*GRID_N);
+        const y = Math.floor(Math.random()*GRID_N);
+        const cells = shipCellsFor(x,y,def.size,orientation);
+        if(cells.some(c=>occ.has(c.x+','+c.y))) continue;
+        cells.forEach(c=>occ.add(c.x+','+c.y));
+        ships.push({id:def.id, name:def.name, size:def.size, cells, hits:new Array(def.size).fill(false)});
+        placed=true; break;
+      }
+      if(!placed){ ok=false; break; }
+    }
+    if(ok){ G.myShips=ships; G.selectedShipId=null; renderPlacementScreen(); return; }
+  }
+  toast('Auto-place failed, try again.');
+}
+function clearAll(){
+  G.myShips=[]; G.selectedShipId=null; renderPlacementScreen();
+}
+function renderFleetList(){
+  const wrap = $('fleet-list');
+  wrap.innerHTML='';
+  SHIP_DEFS.forEach(def=>{
+    const placed = G.myShips.find(s=>s.id===def.id);
+    const chip = document.createElement('div');
+    chip.className = 'fleet-chip glass' + (G.selectedShipId===def.id?' selected':'') + (placed?' placed':'');
+    chip.innerHTML = `<span>${placed?'✅':'🚢'}</span><span class="text-sm font-semibold">${def.name}</span>` +
+      `<span class="flex gap-[2px]">${Array.from({length:def.size}).map(()=>'<span class="ship-dot"></span>').join('')}</span>`;
+    chip.addEventListener('click', ()=>selectShip(def.id));
+    wrap.appendChild(chip);
+  });
+}
+function renderPlacementGrid(){
+  const grid = $('placement-grid');
+  grid.innerHTML='';
+  const shipCellMap = new Map();
+  G.myShips.forEach(sh=> sh.cells.forEach(c=>shipCellMap.set(c.x+','+c.y, sh.id)));
+  for(let y=0;y<GRID_N;y++){
+    for(let x=0;x<GRID_N;x++){
+      const div = document.createElement('div');
+      const key = x+','+y;
+      div.className = 'cell' + (shipCellMap.has(key)?' ship':'');
+      div.dataset.x=x; div.dataset.y=y;
+      div.addEventListener('click', ()=>{
+        if(shipCellMap.has(key)){
+          selectShip(shipCellMap.get(key));
+        } else if(G.selectedShipId){
+          tryPlaceShip(G.selectedShipId, x, y);
+        } else {
+          toast('Select a ship first.');
+        }
+      });
+      grid.appendChild(div);
+    }
+  }
+}
+function renderPlacementScreen(){
+  renderFleetList();
+  renderPlacementGrid();
+  $('orientation-label').textContent = G.orientation==='H'?'Horizontal':'Vertical';
+  $('btn-ready').disabled = G.myShips.length !== SHIP_DEFS.length;
+}
+$('btn-rotate').addEventListener('click', ()=>{ G.orientation = G.orientation==='H'?'V':'H'; renderPlacementScreen(); });
+$('btn-randomize').addEventListener('click', randomizeAll);
+$('btn-clear').addEventListener('click', clearAll);
+$('btn-ready').addEventListener('click', ()=>{
+  if(G.myShips.length !== SHIP_DEFS.length) return;
+  G.iReady = true;
+  send({t:'ready'});
+  $('placement-waiting').classList.remove('hidden');
+  $('btn-ready').classList.add('hidden');
+  maybeStartBattle();
+});
+$('btn-unready').addEventListener('click', ()=>{
+  G.iReady = false;
+  send({t:'unready'});
+  $('placement-waiting').classList.add('hidden');
+  $('btn-ready').classList.remove('hidden');
+});
+
+function maybeStartBattle(){
+  if(G.iReady && G.opponentReady && !G.gameStarted){
+    G.gameStarted = true;
+    if(G.role==='host'){
+      let first;
+      if(G.lastStarter){ first = G.lastStarter==='host' ? 'guest':'host'; }
+      else { first = Math.random()<0.5 ? 'host':'guest'; }
+      G.lastStarter = first;
+      send({t:'start', first});
+      beginBattle(first);
+    }
+    // guest waits for 'start' message; handled when host's message routes through handleMessage->case missing.
+  }
+}
+
+/* ---------------- Battle ---------------- */
+function beginBattle(firstRole){
+  G.isMyTurn = (firstRole === G.role);
+  G.gameOver = false;
+  G.myDefenseGrid = G.myDefenseGrid; // keep grids fresh from resetGameState/rematch
+  showScreen('screen-battle');
+  switchTab('attack');
+  renderBattleScreen();
+  logLine(firstRole===G.role ? 'You go first. Good hunting!' : "Opponent goes first. Stand by.");
+  if(G.isMyTurn){ startTurnTimer(); } else { stopTurnTimerDisplay(); }
+  updateTurnIndicator();
+}
+function switchTab(which){
+  const isAttack = which==='attack';
+  $('tab-attack').classList.toggle('active', isAttack);
+  $('tab-defense').classList.toggle('active', !isAttack);
+  $('pane-attack').classList.toggle('hidden', !isAttack);
+  $('pane-defense').classList.toggle('hidden', isAttack);
+}
+$('tab-attack').addEventListener('click', ()=>switchTab('attack'));
+$('tab-defense').addEventListener('click', ()=>switchTab('defense'));
+
+function updateTurnIndicator(){
+  const el = $('turn-indicator');
+  if(G.gameOver){ el.textContent='Game Over'; return; }
+  el.textContent = G.isMyTurn ? '🎯 Your Turn — Fire!' : "⏳ Opponent's Turn";
+  el.style.color = G.isMyTurn ? '#5eead4' : '#94a3b8';
+}
+
+function renderAttackGrid(){
+  const grid = $('attack-grid');
+  grid.innerHTML='';
+  for(let y=0;y<GRID_N;y++){
+    for(let x=0;x<GRID_N;x++){
+      const v = G.enemyAttackGrid[y][x];
+      const div = document.createElement('div');
+      let cls = 'cell';
+      if(v==='hit') cls+=' hitcell';
+      else if(v==='miss') cls+=' misscell';
+      else if(v==='sunk') cls+=' sunkcell';
+      else if(G.isMyTurn && !G.gameOver) cls+=' tappable';
+      div.className = cls;
+      if(v==='hit'||v==='sunk') div.innerHTML='<span class="mark">🔥</span>';
+      else if(v==='miss') div.innerHTML='<span class="mark">💧</span>';
+      div.dataset.x=x; div.dataset.y=y;
+      if(!v){
+        div.addEventListener('click', ()=>fireAt(x,y));
+      }
+      grid.appendChild(div);
+    }
+  }
+}
+function renderDefenseGrid(){
+  const grid = $('defense-grid');
+  grid.innerHTML='';
+  const shipCellMap = new Map();
+  G.myShips.forEach(sh=> sh.cells.forEach((c,idx)=>shipCellMap.set(c.x+','+c.y, {shipId:sh.id, idx})));
+  for(let y=0;y<GRID_N;y++){
+    for(let x=0;x<GRID_N;x++){
+      const key=x+','+y;
+      const v = G.myDefenseGrid[y][x];
+      const onShip = shipCellMap.has(key);
+      const div = document.createElement('div');
+      let cls = 'cell' + (onShip?' ship':'');
+      if(v==='sunk'){ cls+=' sunkcell ship sunkship'; }
+      else if(v==='hit'){ cls+=' hitcell'; }
+      else if(v==='miss'){ cls+=' misscell'; }
+      div.className = cls;
+      if(v==='hit'||v==='sunk') div.innerHTML='<span class="mark">🔥</span>';
+      else if(v==='miss') div.innerHTML='<span class="mark">💧</span>';
+      grid.appendChild(div);
+    }
+  }
+}
+function renderFleetStatus(){
+  const mine = SHIP_DEFS.map(def=>{
+    const sh = G.myShips.find(s=>s.id===def.id);
+    const sunk = sh && sh.hits.every(h=>h);
+    return `<div class="${sunk?'line-through opacity-50':''}">${sunk?'💀':'🚢'} ${def.name}</div>`;
+  }).join('');
+  $('my-fleet-status').innerHTML = mine;
+
+  const enemy = SHIP_DEFS.map(def=>{
+    const sunk = G.enemySunkShipIds.has(def.id);
+    return `<div class="${sunk?'line-through opacity-50':''}">${sunk?'💀 '+def.name:'❓ Unknown'}</div>`;
+  }).join('');
+  $('enemy-fleet-status').innerHTML = enemy;
+}
+function renderBattleScreen(){
+  renderAttackGrid();
+  renderDefenseGrid();
+  renderFleetStatus();
+  updateTurnIndicator();
+}
+
+/* ----- Turn timer ----- */
+function startTurnTimer(){
+  stopTurnTimer();
+  G.turnSecondsLeft = TURN_SECONDS;
+  updateTimerDisplay();
+  G.turnTimer = setInterval(()=>{
+    G.turnSecondsLeft--;
+    updateTimerDisplay();
+    if(G.turnSecondsLeft<=0){
+      stopTurnTimer();
+      autoFireRandom();
+    }
+  },1000);
+}
+function stopTurnTimer(){
+  if(G.turnTimer) clearInterval(G.turnTimer);
+  G.turnTimer=null;
+  stopTurnTimerDisplay();
+}
+function stopTurnTimerDisplay(){
+  $('timer-ring').textContent='--';
+  $('timer-ring').style.color='';
+}
+function updateTimerDisplay(){
+  const el = $('timer-ring');
+  el.textContent = G.turnSecondsLeft+'s';
+  el.style.color = G.turnSecondsLeft<=10 ? '#f87171' : '#7dd3fc';
+}
+function autoFireRandom(){
+  if(!G.isMyTurn || G.gameOver || G.awaitingResult) return;
+  const candidates=[];
+  for(let y=0;y<GRID_N;y++) for(let x=0;x<GRID_N;x++) if(!G.enemyAttackGrid[y][x]) candidates.push({x,y});
+  if(!candidates.length) return;
+  const pick = candidates[Math.floor(Math.random()*candidates.length)];
+  logLine('Time ran out — firing automatically.');
+  fireAt(pick.x, pick.y);
+}
+
+/* ----- Firing ----- */
+function fireAt(x,y){
+  if(!G.isMyTurn || G.gameOver || G.awaitingResult) return;
+  if(G.enemyAttackGrid[y][x]) return;
+  G.awaitingResult = true;
+  stopTurnTimer();
+  G.enemyAttackGrid[y][x] = 'pending';
+  const cellDiv = document.querySelector(`#attack-grid .cell[data-x="${x}"][data-y="${y}"]`);
+  if(cellDiv) cellDiv.classList.add('pending');
+  G.stats.shotsFired++;
+  sounds.fire();
+  send({t:'fire', x, y});
+  logLine(`You fired at ${coordLabel(x,y)}…`);
+}
+function coordLabel(x,y){ return String.fromCharCode(65+x)+(y+1); }
+
+function handleIncomingFire(x,y){
+  let hit=false, sunk=false, shipHit=null;
+  for(const sh of G.myShips){
+    const idx = sh.cells.findIndex(c=>c.x===x && c.y===y);
+    if(idx>=0){ hit=true; sh.hits[idx]=true; shipHit=sh; sunk = sh.hits.every(h=>h); break; }
+  }
+  G.myDefenseGrid[y][x] = sunk ? 'sunk' : (hit ? 'hit':'miss');
+  if(sunk){
+    shipHit.cells.forEach(c=>{ G.myDefenseGrid[c.y][c.x]='sunk'; });
+  }
+  const allSunk = G.myShips.length===SHIP_DEFS.length && G.myShips.every(s=>s.hits.every(h=>h));
+  send({t:'result', x, y, hit, sunk, shipId: shipHit?shipHit.id:null, shipName: shipHit?shipHit.name:null, gameOver: allSunk});
+
+  $('screen-battle').classList.add('flash');
+  setTimeout(()=>$('screen-battle').classList.remove('flash'),650);
+
+  if(hit){ sounds.hit(); logLine(`Opponent hit your ${shipHit.name} at ${coordLabel(x,y)}!`); }
+  else { sounds.miss(); logLine(`Opponent missed at ${coordLabel(x,y)}.`); }
+  if(sunk){ sounds.sunk(); logLine(`Your ${shipHit.name} was sunk!`); toast(`Your ${shipHit.name} was sunk!`); }
+
+  if(allSunk){
+    G.gameOver = true;
+    renderBattleScreen();
+    endGame(false);
+    return;
+  }
+  G.isMyTurn = true;
+  renderBattleScreen();
+  startTurnTimer();
+}
+
+function handleIncomingResult(msg){
+  G.awaitingResult = false;
+  const cellDiv = document.querySelector(`#attack-grid .cell[data-x="${msg.x}"][data-y="${msg.y}"]`);
+  if(cellDiv) cellDiv.classList.remove('pending');
+  G.enemyAttackGrid[msg.y][msg.x] = msg.sunk ? 'sunk' : (msg.hit ? 'hit':'miss');
+  if(msg.sunk){
+    G.enemySunkShipIds.add(msg.shipId);
+    if(cellDiv){
+      // mark all cells of sunk ship if we happen to know more (we only know this one cell reliably)
+    }
+  }
+  if(msg.hit){ sounds.hit(); G.stats.hits++; logLine(`Direct hit at ${coordLabel(msg.x,msg.y)}!`); vibrate(40); }
+  else { sounds.miss(); logLine(`Miss at ${coordLabel(msg.x,msg.y)}.`); }
+  if(msg.sunk){ sounds.sunk(); const name=msg.shipName||'a ship'; logLine(`You sunk the enemy ${name}!`); toast(`You sunk their ${name}!`); }
+
+  if(msg.gameOver){
+    G.gameOver = true;
+    renderBattleScreen();
+    endGame(true);
+    return;
+  }
+  G.isMyTurn = false;
+  renderBattleScreen();
+  stopTurnTimer();
+}
+
+/* ---------------- Game over ---------------- */
+function endGame(won){
+  stopTurnTimer();
+  showScreen('screen-gameover');
+  $('gameover-title').textContent = won ? '🏆 VICTORY' : '💥 DEFEAT';
+  $('gameover-title').style.color = won ? '#5eead4' : '#f87171';
+  const acc = G.stats.shotsFired ? Math.round((G.stats.hits/G.stats.shotsFired)*100) : 0;
+  $('gameover-stats').innerHTML = `
+    <div>Shots fired: ${G.stats.shotsFired}</div>
+    <div>Hits landed: ${G.stats.hits}</div>
+    <div>Accuracy: ${acc}%</div>
+  `;
+  if(won){ sounds.win(); spawnConfetti(); } else { sounds.lose(); }
+  G.rematchMine=false; G.rematchTheirs=false;
+  $('rematch-status').classList.add('hidden');
+  $('btn-rematch').classList.remove('hidden');
+}
+
+$('btn-rematch').addEventListener('click', ()=>{
+  G.rematchMine = true;
+  send({t:'rematch'});
+  $('rematch-status').textContent='Waiting for opponent to accept rematch…';
+  $('rematch-status').classList.remove('hidden');
+  $('btn-rematch').classList.add('hidden');
+  checkRematchBoth();
+});
+function checkRematchBoth(){
+  if(G.rematchMine && G.rematchTheirs){
+    resetGameState();
+    showScreen('screen-placement');
+    renderPlacementScreen();
+    toast('Rematch! Place your fleet.');
+  }
+}
+$('btn-main-menu').addEventListener('click', ()=>{
+  send({t:'leave'});
+  destroyPeer();
+  resetGameState();
+  showScreen('screen-menu');
+});
+$('btn-quit').addEventListener('click', ()=>{
+  if(confirm('Quit this match?')){
+    send({t:'leave'});
+    destroyPeer();
+    resetGameState();
+    showScreen('screen-menu');
+  }
+});
+
+/* ---------------- Menu wiring ---------------- */
+$('btn-create').addEventListener('click', ()=>{ getCtx(); createAsHost(1); });
+$('btn-create-cancel').addEventListener('click', ()=>{ destroyPeer(); showScreen('screen-menu'); });
+$('btn-copy-code').addEventListener('click', ()=>{
+  navigator.clipboard?.writeText(G.code).then(()=>toast('Code copied!')).catch(()=>toast(G.code));
+});
+$('btn-share-code').addEventListener('click', ()=>{
+  const text = `Join my Naval Strike battleship game! Code: ${G.code}`;
+  if(navigator.share){ navigator.share({title:'Naval Strike', text}).catch(()=>{}); }
+  else { navigator.clipboard?.writeText(text).then(()=>toast('Invite copied to clipboard!')); }
+});
+
+$('btn-join').addEventListener('click', ()=>{ getCtx(); showScreen('screen-join'); $('join-input').value=''; setTimeout(()=>$('join-input').focus(),50); });
+$('btn-join-cancel').addEventListener('click', ()=> showScreen('screen-menu'));
+$('join-input').addEventListener('input', e=>{ e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,''); });
+$('btn-join-go').addEventListener('click', ()=>{
+  const code = $('join-input').value.trim().toUpperCase();
+  if(code.length<5){ toast('Enter the 5-character code.'); return; }
+  joinAsGuest(code);
+});
+$('btn-connecting-cancel').addEventListener('click', ()=>{ destroyPeer(); showScreen('screen-join'); });
+
+/* prevent default touch scroll bounce on iOS while keeping inner scrollv usable */
+document.addEventListener('touchmove', function(e){
+  if(!e.target.closest('.scrollv')) e.preventDefault();
+}, {passive:false});
+
+})();
+</script>
+</body>
+</html>
