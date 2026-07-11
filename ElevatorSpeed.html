@@ -111,10 +111,10 @@
 
         // ---------- Units ----------
         const UNITS = [
-            { label: 'm/s',  factor: 1 },
-            { label: 'km/h', factor: 3.6 },
-            { label: 'mph',  factor: 2.23694 },
-            { label: 'ft/s', factor: 3.28084 },
+            { label: 'm/s',  factor: 1,       dp: 1 },
+            { label: 'km/h', factor: 3.6,     dp: 1 },
+            { label: 'mph',  factor: 2.23694, dp: 3 },
+            { label: 'ft/s', factor: 3.28084, dp: 1 },
         ];
         let unitIdx = 0;
 
@@ -357,7 +357,7 @@
         }
 
         // ---------- Readout ----------
-        function fmtSpeed(v) { return (Math.abs(v) * UNITS[unitIdx].factor).toFixed(1); }
+        function fmtSpeed(v) { return (Math.abs(v) * UNITS[unitIdx].factor).toFixed(UNITS[unitIdx].dp); }
 
         function updateReadout() {
             speedValue.textContent = fmtSpeed(velocity);
