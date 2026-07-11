@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Elevator Speed</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            height: 100vh;
+            height: 100dvh;
+            overscroll-behavior: none;
+            user-select: none;
+            -webkit-user-select: none;
+            font-family: system-ui, -apple-system, 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #111827;
+        }
+
+        :root {
+            --surface: #111827;
+            --ink: #ffffff;
+            --ink-2: #c3c2b7;
+            --muted: #898781;
+            --grid: rgba(255, 255, 255, 0.07);
+            --baseline: rgba(255, 255, 255, 0.22);
+            --trace-up: #3987e5;
+            --trace-down: #e66767;
+        }
+
+        .tabular { font-variant-numeric: tabular-nums; }
+
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.3; }
+        }
+        .recording-dot { animation: pulse-dot 1.2s ease-in-out infinite; }
+
+        @keyframes pop {
+            0% { transform: scale(0.9); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .animate-pop { animation: pop 0.25s ease-out forwards; }
+    </style>
+</head>
+<body class="text-white flex flex-col items-center overflow-hidden">
+    <div class="w-full max-w-md flex flex-col h-full px-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))]">
+
+        <!-- Header -->
+        <header class="flex items-center justify-between mb-2 shrink-0">
+            <h1 class="text-lg font-bold tracking-wide">🛗 Elevator Speed</h1>
+            <div id="status-badge" class="flex items-center gap-2 text-xs font-semibold text-gray-400">
+                <span id="status-dot" class="w-2 h-2 rounded-full bg-gray-600"></span>
+                <span id="status-text">Idle</span>
+            </div>
+        </header>
+
+        <!-- Hero readout -->
+        <div class="shrink-0 bg-gray-800/60 rounded-2xl px-4 py-4 mb-3 text-center">
+            <div class="flex items-center justify-center gap-3">
+                <div id="dir-arrow" class="text-4xl w-12 text-gray-600 transition-colors duration-200">●</div>
+                <div>
+                    <div class="flex items-end justify-center gap-2">
+                        <span id="speed-value" class="text-6xl font-bold tabular leading-none">0.0</span>
+                        <button id="unit-btn" class="text-lg font-semibold text-gray-400 pb-1 px-2 py-0.5 rounded-lg bg-gray-700/60 active:bg-gray-600">m/s</button>
+                    </div>
+                    <div id="dir-label" class="text-sm font-semibold text-gray-500 mt-1 h-5">stationary</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Stats row -->
+        <div class="grid grid-cols-3 gap-2 mb-3 shrink-0 text-center">
+            <div class="bg-gray-800/60 rounded-xl py-2 px-1">
+                <div class="text-[10px] uppercase tracking-wider text-gray-500 font-semibold">Max speed</div>
+                <div class="text-lg font-bold tabular"><span id="max-speed">0.0</span> <span id="max-unit" class="text-xs text-gray-400 font-semibold">m/s</span></div>
+            </div>
+            <div class="bg-gray-800/60 rounded-xl py-2 px-1">
+                <div class="text-[10px] uppercase tracking-wider text-gray-500 font-semibold">Height Δ</div>
+                <div class="text-lg font-bold tabular"><span id="height-delta">0.0</span> <span class="text-xs text-gray-400 font-semibold">m</span></div>
+            </div>
+            <div class="bg-gray-800/60 rounded-xl py-2 px-1">
+                <div class="text-[10px] uppercase tracking-wider text-gray-500 font-semibold">≈ Floors</div>
+                <div class="text-lg font-bold tabular" id="floors">0</div>
+            </div>
+        </div>
+
+        <!-- Speed trace -->
+        <div class="flex-1 min-h-0 bg-gray-800/60 rounded-2xl p-3 mb-3 flex flex-col">
+            <div class="flex items-center justify-between text-[10px] uppercase tracking-wider text-gray-500 font-semibold mb-1 shrink-0">
+                <span>Speed · last 45 s</span>
+                <span class="normal-case tracking-normal text-gray-500">touch trace to inspect</span>
+            </div>
+            <canvas id="chart" class="w-full flex-1 min-h-0 touch-none"></canvas>
+        </div>
+
+        <!-- Controls -->
+        <div class="grid grid-cols-2 gap-2 shrink-0">
+            <button id="start-btn" class="col-span-2 bg-blue-600 active:bg-blue-500 rounded-xl py-3.5 font-bold text-lg transition-colors">Start Measuring</button>
+            <button id="reset-btn" class="bg-gray-700 active:bg-gray-600 rounded-xl py-2.5 font-semibold text-sm transition-colors" disabled>Reset Trip</button>
+            <button id="demo-btn" class="bg-gray-700 active:bg-gray-600 rounded-xl py-2.5 font-semibold text-sm transition-colors">Demo Ride</button>
+        </div>
+
+        <p id="hint" class="text-[11px] text-gray-500 text-center mt-2 shrink-0 leading-snug">
+            Rest your phone on the elevator handrail or floor and tap Start <em>before</em> the elevator moves — it calibrates while still.
+        </p>
+    </div>
+
+    <script>
+    (() => {
+        'use strict';
+
+        // ---------- Units ----------
+        const UNITS = [
+            { label: 'm/s',  factor: 1 },
+            { label: 'km/h', factor: 3.6 },
+            { label: 'mph',  factor: 2.23694 },
+            { label: 'ft/s', factor: 3.28084 },
+        ];
+        let unitIdx = 0;
+
+        // ---------- Trip state ----------
+        const FLOOR_HEIGHT_M = 3.0;
+        const CALIBRATION_S = 1.5;
+
+        let running = false;       // measuring (sensor or demo)
+        let demoMode = false;
+        let calibrating = false;
+        let calibSamples = [];
+        let bias = 0;              // vertical accel bias (m/s²)
+        let velocity = 0;          // signed vertical velocity, + up (m/s)
+        let height = 0;            // signed displacement since start (m)
+        let maxSpeed = 0;
+        let quiescentTime = 0;     // seconds of near-zero acceleration
+        let gravity = null;        // low-passed gravity vector {x,y,z}
+        let lastEventTime = null;
+        let startTime = null;
+
+        // Ring buffer of {t, v} samples for the trace (last WINDOW_S seconds)
+        const WINDOW_S = 45;
+        const samples = [];
+
+        // ---------- Elements ----------
+        const $ = id => document.getElementById(id);
+        const speedValue = $('speed-value'), unitBtn = $('unit-btn'), maxUnit = $('max-unit');
+        const dirArrow = $('dir-arrow'), dirLabel = $('dir-label');
+        const maxSpeedEl = $('max-speed'), heightEl = $('height-delta'), floorsEl = $('floors');
+        const statusDot = $('status-dot'), statusText = $('status-text');
+        const startBtn = $('start-btn'), resetBtn = $('reset-btn'), demoBtn = $('demo-btn');
+        const hint = $('hint');
+        const canvas = $('chart'), ctx = canvas.getContext('2d');
+
+        // ---------- Core physics ----------
+        // Feed one vertical-acceleration sample (m/s², + up) through the integrator.
+        function processSample(aVert, dt) {
+            if (dt <= 0 || dt > 0.5) return; // ignore gaps (tab hidden, etc.)
+
+            if (calibrating) {
+                calibSamples.push(aVert);
+                if (elapsed() >= CALIBRATION_S) {
+                    bias = calibSamples.reduce((s, a) => s + a, 0) / calibSamples.length;
+                    calibrating = false;
+                    setStatus('recording');
+                }
+                return;
+            }
+
+            const a = aVert - bias;
+
+            // Slowly re-learn the bias whenever acceleration is quiet, so slow
+            // sensor drift doesn't masquerade as motion.
+            if (Math.abs(a) < 0.05) {
+                bias += (aVert - bias) * 0.002;
+                quiescentTime += dt;
+            } else {
+                quiescentTime = 0;
+            }
+
+            velocity += a * dt;
+            height += velocity * dt;
+
+            // Zero-velocity update: quiet accel + small residual speed means the
+            // car is actually stopped and the residual is integration drift.
+            // (A real cruise keeps |v| well above the threshold, so it survives.)
+            if (quiescentTime > 2.5 && Math.abs(velocity) < 0.45) velocity = 0;
+
+            maxSpeed = Math.max(maxSpeed, Math.abs(velocity));
+
+            const t = elapsed();
+            samples.push({ t, v: velocity });
+            while (samples.length && samples[0].t < t - WINDOW_S) samples.shift();
+        }
+
+        function elapsed() { return (performance.now() - startTime) / 1000; }
+
+        // ---------- Device motion ----------
+        // Vertical acceleration = linear acceleration projected onto the gravity
+        // direction. Using accelerationIncludingGravity for the direction makes the
+        // sign convention cancel out (iOS and Android negate both vectors together),
+        // so positive always means "accelerating upward" on every platform.
+        function onMotion(e) {
+            const ig = e.accelerationIncludingGravity;
+            if (!ig || ig.x === null) return;
+
+            const now = performance.now();
+            const dt = lastEventTime === null ? (e.interval ? e.interval / 1000 : 0.016)
+                                              : (now - lastEventTime) / 1000;
+            lastEventTime = now;
+
+            // Low-pass the gravity direction (time-constant ≈ 0.5 s)
+            const alpha = Math.min(1, dt / 0.5);
+            if (!gravity) gravity = { x: ig.x, y: ig.y, z: ig.z };
+            gravity.x += (ig.x - gravity.x) * alpha;
+            gravity.y += (ig.y - gravity.y) * alpha;
+            gravity.z += (ig.z - gravity.z) * alpha;
+
+            const gMag = Math.hypot(gravity.x, gravity.y, gravity.z);
+            if (gMag < 1) return;
+
+            // Prefer the fused linear acceleration; fall back to subtracting our
+            // gravity estimate on devices that don't provide it.
+            const lin = (e.acceleration && e.acceleration.x !== null)
+                ? e.acceleration
+                : { x: ig.x - gravity.x, y: ig.y - gravity.y, z: ig.z - gravity.z };
+
+            const aVert = (lin.x * gravity.x + lin.y * gravity.y + lin.z * gravity.z) / gMag;
+            processSample(aVert, dt);
+        }
+
+        // ---------- Demo ride ----------
+        // Synthetic ride profile fed through the same integrator: up 4 floors,
+        // pause, then back down. Loops until stopped.
+        let demoTimer = null;
+        function demoAccel(t) {
+            const CYCLE = 26;
+            const p = t % CYCLE;
+            const seg = (from, to, val) => (p >= from && p < to) ? val : null;
+            return seg(1, 2.5, 0.9)      // launch upward
+                ?? seg(2.5, 9, 0)        // cruise up
+                ?? seg(9, 10.5, -0.9)    // brake
+                ?? seg(10.5, 14, 0)      // stopped at top
+                ?? seg(14, 15.5, -0.9)   // launch downward
+                ?? seg(15.5, 22, 0)      // cruise down
+                ?? seg(22, 23.5, 0.9)    // brake
+                ?? 0;                    // stopped at bottom
+        }
+        function startDemo() {
+            demoMode = true;
+            beginTrip();
+            calibrating = false; // synthetic signal needs no calibration
+            setStatus('demo');
+            let last = performance.now();
+            demoTimer = setInterval(() => {
+                const now = performance.now();
+                const dt = (now - last) / 1000;
+                last = now;
+                const noise = (Math.random() - 0.5) * 0.03;
+                processSample(demoAccel(elapsed()) + noise, dt);
+            }, 33);
+        }
+
+        // ---------- Session control ----------
+        function beginTrip() {
+            velocity = 0; height = 0; maxSpeed = 0;
+            quiescentTime = 0; bias = 0; gravity = null;
+            lastEventTime = null; calibSamples = [];
+            samples.length = 0;
+            startTime = performance.now();
+            calibrating = true;
+            running = true;
+            inspectT = null;
+            startBtn.textContent = 'Stop';
+            startBtn.classList.replace('bg-blue-600', 'bg-red-600');
+            startBtn.classList.replace('active:bg-blue-500', 'active:bg-red-500');
+            resetBtn.disabled = false;
+            requestWakeLock();
+        }
+
+        function stopAll() {
+            running = false;
+            demoMode = false;
+            if (demoTimer) { clearInterval(demoTimer); demoTimer = null; }
+            window.removeEventListener('devicemotion', onMotion);
+            setStatus('idle');
+            startBtn.textContent = 'Start Measuring';
+            startBtn.classList.replace('bg-red-600', 'bg-blue-600');
+            startBtn.classList.replace('active:bg-red-500', 'active:bg-blue-500');
+            releaseWakeLock();
+        }
+
+        async function startSensor() {
+            if (typeof DeviceMotionEvent === 'undefined') {
+                hint.textContent = 'No motion sensors on this device — try the Demo Ride instead.';
+                return;
+            }
+            // iOS requires an explicit permission grant from a user gesture
+            if (typeof DeviceMotionEvent.requestPermission === 'function') {
+                try {
+                    const res = await DeviceMotionEvent.requestPermission();
+                    if (res !== 'granted') {
+                        hint.textContent = 'Motion permission denied — allow motion access in Settings, or try the Demo Ride.';
+                        return;
+                    }
+                } catch {
+                    hint.textContent = 'Motion permission unavailable (needs HTTPS) — try the Demo Ride.';
+                    return;
+                }
+            }
+            beginTrip();
+            setStatus('calibrating');
+            window.addEventListener('devicemotion', onMotion);
+            // If no events arrive, the sensor isn't actually there
+            setTimeout(() => {
+                if (running && !demoMode && lastEventTime === null) {
+                    stopAll();
+                    hint.textContent = 'No motion data received — this device may lack an accelerometer. Try the Demo Ride.';
+                }
+            }, 2000);
+        }
+
+        startBtn.addEventListener('click', () => running ? stopAll() : startSensor());
+        demoBtn.addEventListener('click', () => {
+            if (running) stopAll();
+            startDemo();
+        });
+        resetBtn.addEventListener('click', () => {
+            velocity = 0; height = 0; maxSpeed = 0; samples.length = 0;
+            if (running) startTime = performance.now();
+            inspectT = null;
+        });
+        unitBtn.addEventListener('click', () => {
+            unitIdx = (unitIdx + 1) % UNITS.length;
+            unitBtn.textContent = UNITS[unitIdx].label;
+            maxUnit.textContent = UNITS[unitIdx].label;
+        });
+
+        // ---------- Wake lock (keep screen on during a ride) ----------
+        let wakeLock = null;
+        async function requestWakeLock() {
+            try { wakeLock = await navigator.wakeLock?.request('screen'); } catch {}
+        }
+        function releaseWakeLock() {
+            wakeLock?.release().catch(() => {});
+            wakeLock = null;
+        }
+
+        // ---------- Status badge ----------
+        function setStatus(state) {
+            const map = {
+                idle:        ['bg-gray-600', '', 'Idle'],
+                calibrating: ['bg-yellow-400', 'recording-dot', 'Hold still — calibrating'],
+                recording:   ['bg-green-400', 'recording-dot', 'Measuring'],
+                demo:        ['bg-blue-400', 'recording-dot', 'Demo ride'],
+            };
+            const [color, anim, text] = map[state];
+            statusDot.className = `w-2 h-2 rounded-full ${color} ${anim}`;
+            statusText.textContent = text;
+        }
+
+        // ---------- Readout ----------
+        function fmtSpeed(v) { return (Math.abs(v) * UNITS[unitIdx].factor).toFixed(1); }
+
+        function updateReadout() {
+            speedValue.textContent = fmtSpeed(velocity);
+            maxSpeedEl.textContent = fmtSpeed(maxSpeed);
+            heightEl.textContent = (height >= 0 ? '+' : '−') + Math.abs(height).toFixed(1);
+            const floors = height / FLOOR_HEIGHT_M;
+            floorsEl.textContent = (floors >= 0 ? '+' : '−') + Math.abs(floors).toFixed(1);
+
+            const MOVING = 0.15; // m/s — below this, call it stationary
+            if (velocity > MOVING) {
+                dirArrow.textContent = '▲';
+                dirArrow.style.color = 'var(--trace-up)';
+                dirLabel.textContent = 'going up';
+                dirLabel.style.color = 'var(--trace-up)';
+            } else if (velocity < -MOVING) {
+                dirArrow.textContent = '▼';
+                dirArrow.style.color = 'var(--trace-down)';
+                dirLabel.textContent = 'going down';
+                dirLabel.style.color = 'var(--trace-down)';
+            } else {
+                dirArrow.textContent = '●';
+                dirArrow.style.color = '#4b5563';
+                dirLabel.textContent = 'stationary';
+                dirLabel.style.color = '#6b7280';
+            }
+        }
+
+        // ---------- Chart ----------
+        let inspectT = null; // time value being touch-inspected, or null
+
+        function sizeCanvas() {
+            const dpr = window.devicePixelRatio || 1;
+            const r = canvas.getBoundingClientRect();
+            if (r.width === 0) return;
+            canvas.width = Math.round(r.width * dpr);
+            canvas.height = Math.round(r.height * dpr);
+            ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        }
+        window.addEventListener('resize', sizeCanvas);
+
+        function drawChart() {
+            const r = canvas.getBoundingClientRect();
+            const W = r.width, H = r.height;
+            if (W === 0 || H === 0) return;
+            ctx.clearRect(0, 0, W, H);
+
+            const padL = 30, padR = 8, padT = 8, padB = 16;
+            const plotW = W - padL - padR, plotH = H - padT - padB;
+
+            const now = running ? elapsed() : (samples.length ? samples[samples.length - 1].t : 0);
+            const t0 = now - WINDOW_S; // head pinned to the right edge, trace scrolls left
+
+            // Symmetric y-scale around 0, snapped to a whole m/s
+            let vMax = 1;
+            for (const s of samples) vMax = Math.max(vMax, Math.abs(s.v));
+            vMax = Math.ceil(vMax * 1.15);
+
+            const x = t => padL + ((t - t0) / WINDOW_S) * plotW;
+            const y = v => padT + plotH / 2 - (v / vMax) * (plotH / 2);
+
+            const style = getComputedStyle(document.documentElement);
+            const muted = style.getPropertyValue('--muted').trim();
+
+            // Gridlines + y labels at ±vMax and ±vMax/2
+            ctx.font = '10px system-ui, sans-serif';
+            ctx.fillStyle = muted;
+            ctx.textAlign = 'right';
+            ctx.textBaseline = 'middle';
+            ctx.strokeStyle = style.getPropertyValue('--grid').trim();
+            ctx.lineWidth = 1;
+            for (const v of [vMax, vMax / 2, -vMax / 2, -vMax]) {
+                ctx.beginPath();
+                ctx.moveTo(padL, y(v));
+                ctx.lineTo(W - padR, y(v));
+                ctx.stroke();
+                ctx.fillText((v * UNITS[unitIdx].factor).toFixed(v % 1 ? 1 : 0), padL - 5, y(v));
+            }
+
+            // Zero baseline (stronger)
+            ctx.strokeStyle = style.getPropertyValue('--baseline').trim();
+            ctx.beginPath();
+            ctx.moveTo(padL, y(0));
+            ctx.lineTo(W - padR, y(0));
+            ctx.stroke();
+
+            // x labels
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
+            ctx.fillStyle = muted;
+            for (let s = 0; s <= WINDOW_S; s += 15) {
+                ctx.fillText(s === WINDOW_S ? 'now' : `-${WINDOW_S - s}s`, x(t0 + s), H - padB + 4);
+            }
+
+            if (samples.length > 1) {
+                // Soft fill from trace to baseline
+                const up = style.getPropertyValue('--trace-up').trim();
+                ctx.beginPath();
+                ctx.moveTo(x(samples[0].t), y(0));
+                for (const s of samples) ctx.lineTo(x(s.t), y(s.v));
+                ctx.lineTo(x(samples[samples.length - 1].t), y(0));
+                ctx.closePath();
+                ctx.fillStyle = up + '22';
+                ctx.fill();
+
+                // Trace
+                ctx.beginPath();
+                for (let i = 0; i < samples.length; i++) {
+                    const px = x(samples[i].t), py = y(samples[i].v);
+                    i ? ctx.lineTo(px, py) : ctx.moveTo(px, py);
+                }
+                ctx.strokeStyle = up;
+                ctx.lineWidth = 2;
+                ctx.lineJoin = 'round';
+                ctx.stroke();
+
+                // Live head dot + direct label of current value
+                const last = samples[samples.length - 1];
+                ctx.beginPath();
+                ctx.arc(x(last.t), y(last.v), 3, 0, Math.PI * 2);
+                ctx.fillStyle = up;
+                ctx.fill();
+            }
+
+            // Touch-inspect crosshair
+            if (inspectT !== null && samples.length) {
+                let best = samples[0];
+                for (const s of samples) if (Math.abs(s.t - inspectT) < Math.abs(best.t - inspectT)) best = s;
+                const cx = x(best.t), cy = y(best.v);
+                ctx.setLineDash([3, 3]);
+                ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+                ctx.lineWidth = 1;
+                ctx.beginPath();
+                ctx.moveTo(cx, padT);
+                ctx.lineTo(cx, H - padB);
+                ctx.stroke();
+                ctx.setLineDash([]);
+                ctx.beginPath();
+                ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+                ctx.fillStyle = '#fff';
+                ctx.fill();
+
+                const dir = best.v > 0.15 ? '▲' : best.v < -0.15 ? '▼' : '●';
+                const label = `${dir} ${fmtSpeed(best.v)} ${UNITS[unitIdx].label} · ${Math.max(0, now - best.t).toFixed(0)}s ago`;
+                ctx.font = 'bold 11px system-ui, sans-serif';
+                const tw = ctx.measureText(label).width + 12;
+                const bx = Math.min(Math.max(cx - tw / 2, padL), W - padR - tw);
+                const by = cy < padT + 30 ? cy + 10 : cy - 28;
+                ctx.fillStyle = 'rgba(17,24,39,0.92)';
+                ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+                ctx.beginPath();
+                ctx.roundRect(bx, by, tw, 18, 5);
+                ctx.fill();
+                ctx.stroke();
+                ctx.fillStyle = '#fff';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(label, bx + tw / 2, by + 9);
+            }
+        }
+
+        function chartTimeFromPointer(e) {
+            const r = canvas.getBoundingClientRect();
+            const padL = 30, padR = 8;
+            const frac = Math.min(1, Math.max(0, (e.clientX - r.left - padL) / (r.width - padL - padR)));
+            const now = running ? elapsed() : (samples.length ? samples[samples.length - 1].t : 0);
+            return now - WINDOW_S + frac * WINDOW_S;
+        }
+        canvas.addEventListener('pointerdown', e => { inspectT = chartTimeFromPointer(e); canvas.setPointerCapture(e.pointerId); });
+        canvas.addEventListener('pointermove', e => { if (inspectT !== null) inspectT = chartTimeFromPointer(e); });
+        canvas.addEventListener('pointerup', () => { inspectT = null; });
+        canvas.addEventListener('pointercancel', () => { inspectT = null; });
+
+        // ---------- Render loop ----------
+        function frame() {
+            updateReadout();
+            drawChart();
+            requestAnimationFrame(frame);
+        }
+        sizeCanvas();
+        requestAnimationFrame(() => { sizeCanvas(); frame(); });
+    })();
+    </script>
+</body>
+</html>
