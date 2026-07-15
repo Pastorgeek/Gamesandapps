@@ -6,7 +6,7 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#0e1320">
-<title>Clap Timer Challenge</title>
+<title>Tap Timer Challenge</title>
 <style>
     :root {
         --bg: #0e1320;
@@ -142,12 +142,6 @@
     }
     .name-input:focus { border-color: var(--accent); }
 
-    input[type="range"] {
-        width: 100%;
-        accent-color: var(--accent);
-    }
-    .hint { font-size: 12.5px; color: var(--muted); line-height: 1.5; margin-top: 6px; }
-
     .btn {
         appearance: none;
         border: none;
@@ -162,20 +156,13 @@
         cursor: pointer;
         box-shadow: 0 8px 24px rgba(85, 99, 232, 0.35);
         transition: transform 0.08s ease;
+        touch-action: manipulation;
     }
     .btn:active { transform: scale(0.97); }
     .btn.go {
         background: linear-gradient(180deg, #35c97f 0%, #22a866 100%);
         box-shadow: 0 8px 24px rgba(34, 168, 102, 0.35);
         font-size: 22px;
-    }
-    .btn.ghost {
-        background: var(--surface-2);
-        border: 1px solid var(--line);
-        box-shadow: none;
-        color: var(--ink);
-        font-size: 16px;
-        padding: 14px;
     }
     .btn:focus-visible, .pc-btn:focus-visible, .link-btn:focus-visible {
         outline: 2px solid var(--accent);
@@ -195,14 +182,6 @@
         touch-action: manipulation;
     }
 
-    .btn { touch-action: manipulation; }
-
-    .error {
-        color: var(--red);
-        font-size: 14px;
-        text-align: center;
-        line-height: 1.5;
-    }
     .hidden { display: none !important; }
 
     .num, .big-num {
@@ -215,11 +194,11 @@
         line-height: 1.1;
     }
 
-    /* listening circle */
+    /* tap circle */
     .circle-wrap {
         position: relative;
-        width: 200px;
-        height: 200px;
+        width: 230px;
+        height: 230px;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -233,8 +212,8 @@
     }
     .circle {
         position: relative;
-        width: 168px;
-        height: 168px;
+        width: 196px;
+        height: 196px;
         border-radius: 50%;
         background: var(--surface);
         border: 4px solid var(--accent);
@@ -244,13 +223,12 @@
         justify-content: center;
         gap: 6px;
         text-align: center;
-        cursor: default;
+        cursor: pointer;
     }
-    .circle .emoji { font-size: 46px; line-height: 1; }
-    .circle .status { font-size: 13px; font-weight: 700; color: var(--ink); padding: 0 16px; }
+    .circle .emoji { font-size: 52px; line-height: 1; }
+    .circle .status { font-size: 14px; font-weight: 700; color: var(--ink); padding: 0 18px; }
     .circle.running { border-color: var(--green); }
     .circle-wrap.running .pulse-ring { background: rgba(65, 217, 141, 0.35); }
-    body.tap-mode .circle { cursor: pointer; }
 
     @keyframes pulse-ring {
         0%   { transform: scale(1);   opacity: 0.6; }
@@ -271,25 +249,6 @@
     @media (prefers-reduced-motion: reduce) {
         .pulse-ring, .clap-flash, .pop { animation: none; }
     }
-
-    .meter {
-        width: 100%;
-        max-width: 300px;
-    }
-    .meter-track {
-        height: 10px;
-        background: var(--surface-2);
-        border: 1px solid var(--line);
-        border-radius: 999px;
-        overflow: hidden;
-    }
-    .meter-fill {
-        height: 100%;
-        width: 0%;
-        background: var(--accent);
-        border-radius: 999px;
-    }
-    .meter-label { font-size: 11.5px; color: var(--muted); text-align: center; margin-top: 5px; }
 
     /* result */
     .result-grid {
@@ -336,8 +295,8 @@
     <!-- ============ SETUP ============ -->
     <div id="screen-setup" class="screen active pop">
         <div>
-            <h1>👏 Clap Timer</h1>
-            <p class="sub" style="margin-top:10px">Clap once to start a hidden timer, clap again to stop it as close to the target time as you can. Lowest total difference after 3 rounds wins!</p>
+            <h1>⏱️ Tap Timer</h1>
+            <p class="sub" style="margin-top:10px">Tap once to start a hidden timer, tap again to stop it as close to the target time as you can. Everyone gets the same target each round — lowest total difference after 3 rounds wins!</p>
         </div>
 
         <div class="card">
@@ -351,16 +310,9 @@
                 </div>
             </div>
             <div id="name-inputs"></div>
-            <div>
-                <p class="field-label">Clap sensitivity</p>
-                <input id="sensitivity" type="range" min="5" max="60" value="25">
-                <p class="hint">Left = triggers on quieter sounds. Adjust if claps aren't detected (or are detected too easily).</p>
-            </div>
         </div>
 
-        <button type="button" id="btn-start-game" class="btn">Start Game 🎤</button>
-        <p id="mic-error" class="error hidden"></p>
-        <button type="button" id="btn-tap-mode" class="btn ghost hidden">Play in Tap Mode instead 👆</button>
+        <button type="button" id="btn-start-game" class="btn">Start Game 🎮</button>
     </div>
 
     <!-- ============ TURN INTRO ============ -->
@@ -368,19 +320,19 @@
         <p class="eyebrow" id="intro-round"></p>
         <h2 id="intro-player"></h2>
         <div class="card" style="text-align:center; gap:6px">
-            <p class="stat-label">Your target time</p>
+            <p class="stat-label">This round's target</p>
             <p class="big-num target-num" id="intro-target"></p>
-            <p class="stat-label">seconds between your two claps</p>
+            <p class="stat-label">seconds between your two taps</p>
         </div>
         <p class="sub">
             Memorize it! After you press GO:<br>
-            <strong>Clap #1</strong> starts the timer &middot; <strong>Clap #2</strong> stops it.<br>
+            <strong>Tap #1</strong> starts the timer &middot; <strong>Tap #2</strong> stops it.<br>
             No countdown will be shown — trust your inner clock. ⏱️🙈
         </p>
-        <button type="button" id="btn-go" class="btn go">GO — start listening 👂</button>
+        <button type="button" id="btn-go" class="btn go">GO 👆</button>
     </div>
 
-    <!-- ============ LISTENING ============ -->
+    <!-- ============ TAP SCREEN ============ -->
     <div id="screen-listen" class="screen">
         <p class="eyebrow" id="listen-header"></p>
         <div style="text-align:center">
@@ -391,14 +343,9 @@
         <div class="circle-wrap" id="circle-wrap">
             <div class="pulse-ring"></div>
             <div class="circle" id="listen-circle">
-                <span class="emoji" id="listen-emoji">👂</span>
-                <span class="status" id="listen-status">Waiting for clap #1</span>
+                <span class="emoji" id="listen-emoji">👆</span>
+                <span class="status" id="listen-status">Tap the circle to start</span>
             </div>
-        </div>
-
-        <div class="meter" id="meter">
-            <div class="meter-track"><div class="meter-fill" id="level-bar"></div></div>
-            <p class="meter-label">mic level</p>
         </div>
 
         <button type="button" id="btn-cancel-turn" class="link-btn">restart this turn</button>
@@ -440,27 +387,20 @@
     'use strict';
 
     var ROUNDS = 3;
-    var CLAP_REFRACTORY_MS = 350;   // ignore echoes right after a clap
-    var ARM_DELAY_MS = 600;         // ignore the GO button press noise
+    var TAP_REFRACTORY_MS = 350;   // ignore accidental double taps
+    var ARM_DELAY_MS = 400;        // ignore the GO press carrying through
 
     // ---------- state ----------
     var playerCount = 1;
-    var players = [];                 // [{name, diffs: [..]}]
+    var players = [];              // [{name, diffs: [..]}]
+    var roundTargets = [];         // one shared target per round — same for every player
     var round = 0;
     var turn = 0;
-    var target = 0;                   // seconds
-    var clapCount = 0;
-    var clapStartTime = 0;
+    var tapCount = 0;
+    var tapStartTime = 0;
     var armedAt = 0;
-    var listening = false;
-    var tapMode = false;
-
-    // ---------- audio ----------
-    var audioCtx = null;
-    var analyser = null;
-    var timeData = null;
-    var micStream = null;
-    var lastClapAt = -Infinity;
+    var lastTapAt = -Infinity;
+    var playing = false;
 
     // ---------- phone niceties ----------
     var wakeLock = null;
@@ -474,9 +414,7 @@
         if (wakeLock) { wakeLock.release().catch(function () {}); wakeLock = null; }
     }
     document.addEventListener('visibilitychange', function () {
-        if (document.visibilityState !== 'visible') return;
-        if (listening) keepAwake();
-        if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+        if (document.visibilityState === 'visible' && playing) keepAwake();
     });
     function buzz(ms) {
         if (navigator.vibrate) navigator.vibrate(ms);
@@ -516,109 +454,66 @@
     });
     buildNameInputs();
 
-    function initMic() {
-        if (micStream) return Promise.resolve(true);
-        if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-            micFailed('This browser (or this page context) doesn’t allow microphone access.');
-            return Promise.resolve(false);
-        }
-        return navigator.mediaDevices.getUserMedia({
-            audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
-        }).then(function (stream) {
-            micStream = stream;
-            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-            var src = audioCtx.createMediaStreamSource(micStream);
-            analyser = audioCtx.createAnalyser();
-            analyser.fftSize = 2048;
-            timeData = new Uint8Array(analyser.fftSize);
-            src.connect(analyser);
-            return true;
-        }).catch(function (err) {
-            micFailed('Microphone was blocked (' + err.name + '). Allow the mic in your browser settings and try again — or play in Tap Mode below.');
-            return false;
-        });
-    }
-
-    function micFailed(msg) {
-        var el = $('mic-error');
-        el.textContent = msg;
-        el.classList.remove('hidden');
-        $('btn-tap-mode').classList.remove('hidden');
-    }
-
-    function beginGame() {
-        var inputs = document.querySelectorAll('.name-input');
-        players = [];
-        for (var i = 0; i < inputs.length; i++) {
-            players.push({ name: inputs[i].value.trim() || 'Player ' + (i + 1), diffs: [] });
-        }
-        round = 0;
-        turn = 0;
-        document.body.classList.toggle('tap-mode', tapMode);
-        startTurn();
-    }
-
-    $('btn-start-game').addEventListener('click', function () {
-        initMic().then(function (ok) {
-            if (!ok) return;
-            tapMode = false;
-            var resume = (audioCtx.state === 'suspended') ? audioCtx.resume() : Promise.resolve();
-            resume.then(beginGame, beginGame);
-        });
-    });
-
-    $('btn-tap-mode').addEventListener('click', function () {
-        tapMode = true;
-        beginGame();
-    });
-
-    // ---------- turn flow ----------
     function randomTarget() {
         // random 3.00 – 10.00 seconds
         return Math.round((3 + Math.random() * 7) * 100) / 100;
     }
 
+    $('btn-start-game').addEventListener('click', function () {
+        var inputs = document.querySelectorAll('.name-input');
+        players = [];
+        for (var i = 0; i < inputs.length; i++) {
+            players.push({ name: inputs[i].value.trim() || 'Player ' + (i + 1), diffs: [] });
+        }
+        // one target per round, shared by every player, so each round is fair
+        roundTargets = [];
+        for (var r = 0; r < ROUNDS; r++) roundTargets.push(randomTarget());
+        round = 0;
+        turn = 0;
+        startTurn();
+    });
+
+    // ---------- turn flow ----------
+    function target() { return roundTargets[round]; }
+
     function startTurn() {
-        listening = false;
-        target = randomTarget();
+        playing = false;
+        releaseWake();
         $('intro-round').textContent = 'Round ' + (round + 1) + ' of ' + ROUNDS;
         $('intro-player').textContent = players[turn].name;
-        $('intro-target').textContent = target.toFixed(2) + 's';
+        $('intro-target').textContent = target().toFixed(2) + 's';
         show('intro');
     }
 
     $('btn-go').addEventListener('click', function () {
-        clapCount = 0;
-        lastClapAt = -Infinity;
+        tapCount = 0;
+        lastTapAt = -Infinity;
         armedAt = performance.now() + ARM_DELAY_MS;
-        listening = true;
+        playing = true;
         $('listen-header').textContent = players[turn].name + ' — Round ' + (round + 1);
-        $('listen-target').textContent = target.toFixed(2) + 's';
-        $('meter').classList.toggle('hidden', tapMode);
-        setListenState(0);
+        $('listen-target').textContent = target().toFixed(2) + 's';
+        setTapState(0);
         show('listen');
         keepAwake();
     });
 
     $('btn-cancel-turn').addEventListener('click', function () {
-        listening = false;
-        releaseWake();
         startTurn();
     });
 
-    function setListenState(count) {
+    function setTapState(count) {
         var status = $('listen-status');
         var emoji = $('listen-emoji');
         var circle = $('listen-circle');
         var wrap = $('circle-wrap');
         if (count === 0) {
-            emoji.textContent = tapMode ? '👆' : '👂';
-            status.textContent = tapMode ? 'Tap the circle to start' : 'Waiting for clap #1';
+            emoji.textContent = '👆';
+            status.textContent = 'Tap the circle to start';
             circle.classList.remove('running');
             wrap.classList.remove('running');
         } else {
             emoji.textContent = '⏱️';
-            status.textContent = tapMode ? 'Timer running… tap to stop' : 'Timer running… clap #2 stops it';
+            status.textContent = 'Timer running… tap to stop';
             circle.classList.add('running');
             wrap.classList.add('running');
         }
@@ -627,27 +522,22 @@
         if (count > 0) circle.classList.add('clap-flash');
     }
 
-    function onClap(now) {
-        clapCount++;
-        if (clapCount === 1) {
-            clapStartTime = now;
+    $('listen-circle').addEventListener('pointerdown', function () {
+        if (!playing) return;
+        var now = performance.now();
+        if (now < armedAt || now - lastTapAt <= TAP_REFRACTORY_MS) return;
+        lastTapAt = now;
+        tapCount++;
+        if (tapCount === 1) {
+            tapStartTime = now;
             buzz(30);
-            setListenState(1);
-        } else if (clapCount === 2) {
-            listening = false;
+            setTapState(1);
+        } else if (tapCount === 2) {
+            playing = false;
             releaseWake();
             buzz([30, 60, 30]);
-            finishTurn((now - clapStartTime) / 1000);
+            finishTurn((now - tapStartTime) / 1000);
         }
-    }
-
-    // tap mode: the circle itself is the "clap"
-    $('listen-circle').addEventListener('pointerdown', function () {
-        if (!tapMode || !listening) return;
-        var now = performance.now();
-        if (now < armedAt || now - lastClapAt <= CLAP_REFRACTORY_MS) return;
-        lastClapAt = now;
-        onClap(now);
     });
 
     function remark(diff) {
@@ -660,11 +550,11 @@
     }
 
     function finishTurn(elapsed) {
-        var diff = Math.abs(elapsed - target);
+        var diff = Math.abs(elapsed - target());
         players[turn].diffs.push(diff);
 
         $('result-player').textContent = players[turn].name;
-        $('result-target').textContent = target.toFixed(2) + 's';
+        $('result-target').textContent = target().toFixed(2) + 's';
         $('result-actual').textContent = elapsed.toFixed(3) + 's';
         var diffEl = $('result-diff');
         diffEl.textContent = diff.toFixed(3) + 's';
@@ -726,33 +616,6 @@
     $('btn-again').addEventListener('click', function () {
         show('setup');
     });
-
-    // ---------- clap detection loop ----------
-    function detectLoop() {
-        requestAnimationFrame(detectLoop);
-        if (!analyser || tapMode) return;
-
-        analyser.getByteTimeDomainData(timeData);
-        var peak = 0;
-        for (var i = 0; i < timeData.length; i++) {
-            var v = Math.abs(timeData[i] - 128) / 128;
-            if (v > peak) peak = v;
-        }
-
-        if (listening) {
-            $('level-bar').style.width = Math.min(100, peak * 100) + '%';
-
-            var threshold = parseInt($('sensitivity').value, 10) / 100;
-            var now = performance.now();
-            if (now >= armedAt &&
-                peak >= threshold &&
-                now - lastClapAt > CLAP_REFRACTORY_MS) {
-                lastClapAt = now;
-                onClap(now);
-            }
-        }
-    }
-    detectLoop();
 })();
 </script>
 </body>
