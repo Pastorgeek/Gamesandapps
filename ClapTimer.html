@@ -1,0 +1,419 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Clap Timer Challenge</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            height: 100vh;
+            height: 100dvh;
+            overscroll-behavior: none;
+            user-select: none;
+            -webkit-user-select: none;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: #111827;
+        }
+
+        @keyframes pop {
+            0% { transform: scale(0.8); opacity: 0; }
+            50% { transform: scale(1.1); }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .animate-pop { animation: pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+
+        @keyframes pulse-ring {
+            0% { transform: scale(1); opacity: 0.6; }
+            100% { transform: scale(1.8); opacity: 0; }
+        }
+        .pulse-ring {
+            animation: pulse-ring 1.4s ease-out infinite;
+        }
+
+        @keyframes clap-flash {
+            0% { transform: scale(1); }
+            30% { transform: scale(1.25); }
+            100% { transform: scale(1); }
+        }
+        .clap-flash { animation: clap-flash 0.35s ease-out; }
+
+        .screen { display: none; }
+        .screen.active { display: flex; }
+    </style>
+</head>
+<body class="text-gray-100">
+<div class="h-full w-full flex items-center justify-center p-4">
+
+    <!-- ============ SETUP SCREEN ============ -->
+    <div id="screen-setup" class="screen active flex-col items-center gap-6 w-full max-w-md animate-pop">
+        <div class="text-center">
+            <h1 class="text-4xl font-extrabold tracking-tight">👏 Clap Timer</h1>
+            <p class="text-gray-400 mt-2">Clap once to start the hidden timer, clap again to stop it as close to the target time as you can. Lowest total difference after 3 rounds wins!</p>
+        </div>
+
+        <div class="w-full bg-gray-800 rounded-2xl p-5 flex flex-col gap-4">
+            <div>
+                <p class="font-semibold mb-2">Players</p>
+                <div class="grid grid-cols-4 gap-2" id="player-count-btns">
+                    <button data-count="1" class="pc-btn bg-indigo-600 rounded-xl py-3 font-bold text-lg">1</button>
+                    <button data-count="2" class="pc-btn bg-gray-700 rounded-xl py-3 font-bold text-lg">2</button>
+                    <button data-count="3" class="pc-btn bg-gray-700 rounded-xl py-3 font-bold text-lg">3</button>
+                    <button data-count="4" class="pc-btn bg-gray-700 rounded-xl py-3 font-bold text-lg">4</button>
+                </div>
+            </div>
+            <div id="name-inputs" class="flex flex-col gap-2"></div>
+            <div>
+                <p class="font-semibold mb-1">Clap sensitivity</p>
+                <input id="sensitivity" type="range" min="5" max="60" value="25" class="w-full accent-indigo-500">
+                <p class="text-xs text-gray-400">Left = triggers on quieter sounds. Adjust if claps aren't detected (or detected too easily).</p>
+            </div>
+        </div>
+
+        <button id="btn-start-game" class="w-full bg-indigo-600 hover:bg-indigo-500 active:scale-95 transition rounded-2xl py-4 text-xl font-extrabold shadow-lg">
+            Start Game 🎤
+        </button>
+        <p id="mic-error" class="text-red-400 text-sm text-center hidden"></p>
+    </div>
+
+    <!-- ============ TURN INTRO SCREEN ============ -->
+    <div id="screen-intro" class="screen flex-col items-center gap-6 w-full max-w-md animate-pop">
+        <p class="text-gray-400 font-semibold" id="intro-round"></p>
+        <h2 class="text-3xl font-extrabold" id="intro-player"></h2>
+        <div class="bg-gray-800 rounded-2xl p-6 text-center w-full">
+            <p class="text-gray-400">Your target time</p>
+            <p class="text-6xl font-extrabold text-amber-400 my-2" id="intro-target"></p>
+            <p class="text-gray-400 text-sm">seconds between your two claps</p>
+        </div>
+        <div class="text-sm text-gray-400 text-center leading-relaxed">
+            Memorize it! After you press GO:<br>
+            <span class="text-gray-200 font-semibold">Clap #1</span> starts the timer &middot;
+            <span class="text-gray-200 font-semibold">Clap #2</span> stops it.<br>
+            No countdown will be shown — trust your inner clock. ⏱️🙈
+        </div>
+        <button id="btn-go" class="w-full bg-green-600 hover:bg-green-500 active:scale-95 transition rounded-2xl py-5 text-2xl font-extrabold shadow-lg">
+            GO — start listening 👂
+        </button>
+    </div>
+
+    <!-- ============ LISTENING SCREEN ============ -->
+    <div id="screen-listen" class="screen flex-col items-center gap-8 w-full max-w-md">
+        <p class="text-gray-400 font-semibold" id="listen-header"></p>
+        <div class="text-center">
+            <p class="text-gray-400 text-sm">Target</p>
+            <p class="text-3xl font-extrabold text-amber-400" id="listen-target"></p>
+        </div>
+
+        <div class="relative flex items-center justify-center h-48 w-48">
+            <div id="listen-ring" class="absolute inset-0 rounded-full bg-indigo-500/40 pulse-ring"></div>
+            <div id="listen-circle" class="relative h-40 w-40 rounded-full bg-gray-800 border-4 border-indigo-500 flex flex-col items-center justify-center">
+                <span class="text-5xl" id="listen-emoji">👂</span>
+                <span class="text-sm text-gray-300 mt-1 font-semibold" id="listen-status">Waiting for clap #1</span>
+            </div>
+        </div>
+
+        <div class="w-full max-w-xs">
+            <div class="h-3 bg-gray-800 rounded-full overflow-hidden">
+                <div id="level-bar" class="h-full bg-indigo-500 rounded-full transition-none" style="width:0%"></div>
+            </div>
+            <p class="text-xs text-gray-500 text-center mt-1">mic level</p>
+        </div>
+
+        <button id="btn-cancel-turn" class="text-gray-400 underline text-sm">restart this turn</button>
+    </div>
+
+    <!-- ============ RESULT SCREEN ============ -->
+    <div id="screen-result" class="screen flex-col items-center gap-6 w-full max-w-md animate-pop">
+        <h2 class="text-2xl font-extrabold" id="result-player"></h2>
+        <div class="bg-gray-800 rounded-2xl p-6 w-full text-center flex flex-col gap-3">
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <p class="text-gray-400 text-sm">Target</p>
+                    <p class="text-2xl font-extrabold text-amber-400" id="result-target"></p>
+                </div>
+                <div>
+                    <p class="text-gray-400 text-sm">Your time</p>
+                    <p class="text-2xl font-extrabold text-indigo-400" id="result-actual"></p>
+                </div>
+            </div>
+            <div class="border-t border-gray-700 pt-3">
+                <p class="text-gray-400 text-sm">Difference</p>
+                <p class="text-5xl font-extrabold" id="result-diff"></p>
+                <p class="text-lg mt-2" id="result-remark"></p>
+            </div>
+        </div>
+        <button id="btn-next" class="w-full bg-indigo-600 hover:bg-indigo-500 active:scale-95 transition rounded-2xl py-4 text-xl font-extrabold shadow-lg"></button>
+    </div>
+
+    <!-- ============ FINAL SCREEN ============ -->
+    <div id="screen-final" class="screen flex-col items-center gap-6 w-full max-w-md animate-pop">
+        <h1 class="text-4xl font-extrabold">🏆 Results</h1>
+        <div id="final-table" class="w-full flex flex-col gap-3"></div>
+        <button id="btn-again" class="w-full bg-indigo-600 hover:bg-indigo-500 active:scale-95 transition rounded-2xl py-4 text-xl font-extrabold shadow-lg">
+            Play Again 🔁
+        </button>
+    </div>
+</div>
+
+<script>
+(() => {
+    'use strict';
+
+    const ROUNDS = 3;
+    const CLAP_REFRACTORY_MS = 350;   // ignore echoes right after a clap
+    const ARM_DELAY_MS = 600;         // ignore the GO button press noise
+
+    // ---------- state ----------
+    let playerCount = 1;
+    let players = [];                  // [{name, diffs: [..]}]
+    let round = 0;                     // 0-based
+    let turn = 0;                      // 0-based player index within round
+    let target = 0;                    // seconds
+    let clapCount = 0;
+    let clapStartTime = 0;             // performance.now() of clap #1
+    let armedAt = 0;
+    let listening = false;
+
+    // ---------- audio ----------
+    let audioCtx = null;
+    let analyser = null;
+    let timeData = null;
+    let micStream = null;
+    let lastClapAt = -Infinity;
+
+    // ---------- dom ----------
+    const $ = id => document.getElementById(id);
+    const screens = ['setup', 'intro', 'listen', 'result', 'final'];
+    function show(name) {
+        screens.forEach(s => $('screen-' + s).classList.toggle('active', s === name));
+    }
+
+    // ---------- setup ----------
+    function buildNameInputs() {
+        const wrap = $('name-inputs');
+        wrap.innerHTML = '';
+        for (let i = 0; i < playerCount; i++) {
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.maxLength = 14;
+            input.placeholder = 'Player ' + (i + 1);
+            input.className = 'name-input bg-gray-700 rounded-xl px-4 py-2 outline-none focus:ring-2 focus:ring-indigo-500';
+            wrap.appendChild(input);
+        }
+    }
+
+    $('player-count-btns').addEventListener('click', e => {
+        const btn = e.target.closest('.pc-btn');
+        if (!btn) return;
+        playerCount = parseInt(btn.dataset.count, 10);
+        document.querySelectorAll('.pc-btn').forEach(b => {
+            b.className = 'pc-btn rounded-xl py-3 font-bold text-lg ' +
+                (b === btn ? 'bg-indigo-600' : 'bg-gray-700');
+        });
+        buildNameInputs();
+    });
+    buildNameInputs();
+
+    async function initMic() {
+        if (micStream) return true;
+        try {
+            micStream = await navigator.mediaDevices.getUserMedia({
+                audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false }
+            });
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const src = audioCtx.createMediaStreamSource(micStream);
+            analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 2048;
+            timeData = new Uint8Array(analyser.fftSize);
+            src.connect(analyser);
+            return true;
+        } catch (err) {
+            const el = $('mic-error');
+            el.textContent = 'Microphone access is required to detect claps. Please allow the mic and try again. (' + err.name + ')';
+            el.classList.remove('hidden');
+            return false;
+        }
+    }
+
+    $('btn-start-game').addEventListener('click', async () => {
+        const ok = await initMic();
+        if (!ok) return;
+        if (audioCtx.state === 'suspended') await audioCtx.resume();
+
+        const names = [...document.querySelectorAll('.name-input')]
+            .map((el, i) => el.value.trim() || 'Player ' + (i + 1));
+        players = names.map(n => ({ name: n, diffs: [] }));
+        round = 0;
+        turn = 0;
+        startTurn();
+    });
+
+    // ---------- turn flow ----------
+    function randomTarget() {
+        // random 3.00 – 10.00 seconds
+        return Math.round((3 + Math.random() * 7) * 100) / 100;
+    }
+
+    function startTurn() {
+        target = randomTarget();
+        $('intro-round').textContent = 'Round ' + (round + 1) + ' of ' + ROUNDS;
+        $('intro-player').textContent = players[turn].name;
+        $('intro-target').textContent = target.toFixed(2) + 's';
+        show('intro');
+    }
+
+    $('btn-go').addEventListener('click', () => {
+        clapCount = 0;
+        lastClapAt = -Infinity;
+        armedAt = performance.now() + ARM_DELAY_MS;
+        listening = true;
+        $('listen-header').textContent = players[turn].name + ' — Round ' + (round + 1);
+        $('listen-target').textContent = target.toFixed(2) + 's';
+        setListenState(0);
+        show('listen');
+    });
+
+    $('btn-cancel-turn').addEventListener('click', () => {
+        listening = false;
+        startTurn();
+    });
+
+    function setListenState(count) {
+        const status = $('listen-status');
+        const emoji = $('listen-emoji');
+        const circle = $('listen-circle');
+        const ring = $('listen-ring');
+        if (count === 0) {
+            emoji.textContent = '👂';
+            status.textContent = 'Waiting for clap #1';
+            circle.classList.remove('border-green-500');
+            circle.classList.add('border-indigo-500');
+            ring.classList.remove('bg-green-500/40');
+            ring.classList.add('bg-indigo-500/40');
+        } else {
+            emoji.textContent = '⏱️';
+            status.textContent = 'Timer running… clap #2 stops it';
+            circle.classList.remove('border-indigo-500');
+            circle.classList.add('border-green-500');
+            ring.classList.remove('bg-indigo-500/40');
+            ring.classList.add('bg-green-500/40');
+        }
+        circle.classList.remove('clap-flash');
+        void circle.offsetWidth; // restart animation
+        if (count > 0) circle.classList.add('clap-flash');
+    }
+
+    function onClap(now) {
+        clapCount++;
+        if (clapCount === 1) {
+            clapStartTime = now;
+            setListenState(1);
+        } else if (clapCount === 2) {
+            listening = false;
+            const elapsed = (now - clapStartTime) / 1000;
+            finishTurn(elapsed);
+        }
+    }
+
+    function remark(diff) {
+        if (diff < 0.05) return '🤯 Inhuman precision!';
+        if (diff < 0.15) return '🔥 Incredible!';
+        if (diff < 0.35) return '🎯 Great inner clock!';
+        if (diff < 0.75) return '👍 Not bad!';
+        if (diff < 1.5)  return '😅 Room to improve…';
+        return '🐢 Way off — practice makes perfect!';
+    }
+
+    function finishTurn(elapsed) {
+        const diff = Math.abs(elapsed - target);
+        players[turn].diffs.push(diff);
+
+        $('result-player').textContent = players[turn].name;
+        $('result-target').textContent = target.toFixed(2) + 's';
+        $('result-actual').textContent = elapsed.toFixed(3) + 's';
+        const diffEl = $('result-diff');
+        diffEl.textContent = diff.toFixed(3) + 's';
+        diffEl.className = 'text-5xl font-extrabold ' +
+            (diff < 0.35 ? 'text-green-400' : diff < 1 ? 'text-amber-400' : 'text-red-400');
+        $('result-remark').textContent = remark(diff);
+
+        const isLastTurn = (turn === players.length - 1) && (round === ROUNDS - 1);
+        $('btn-next').textContent = isLastTurn ? 'See Final Results 🏆' : 'Next Turn ➡️';
+        show('result');
+    }
+
+    $('btn-next').addEventListener('click', () => {
+        turn++;
+        if (turn >= players.length) {
+            turn = 0;
+            round++;
+        }
+        if (round >= ROUNDS) {
+            showFinal();
+        } else {
+            startTurn();
+        }
+    });
+
+    // ---------- final ----------
+    function showFinal() {
+        const ranked = players
+            .map(p => ({ ...p, total: p.diffs.reduce((a, b) => a + b, 0) }))
+            .sort((a, b) => a.total - b.total);
+
+        const medals = ['🥇', '🥈', '🥉', '4️⃣'];
+        $('final-table').innerHTML = ranked.map((p, i) => `
+            <div class="bg-gray-800 rounded-2xl p-4 flex items-center gap-4 ${i === 0 ? 'ring-2 ring-amber-400' : ''}">
+                <span class="text-3xl">${medals[i]}</span>
+                <div class="flex-1">
+                    <p class="font-extrabold text-lg">${escapeHtml(p.name)}</p>
+                    <p class="text-xs text-gray-400">rounds: ${p.diffs.map(d => d.toFixed(3) + 's').join(' · ')}</p>
+                </div>
+                <div class="text-right">
+                    <p class="font-extrabold text-xl ${i === 0 ? 'text-amber-400' : 'text-gray-200'}">${p.total.toFixed(3)}s</p>
+                    <p class="text-xs text-gray-400">total off</p>
+                </div>
+            </div>`).join('');
+        show('final');
+    }
+
+    function escapeHtml(s) {
+        return s.replace(/[&<>"']/g, c => ({
+            '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+        }[c]));
+    }
+
+    $('btn-again').addEventListener('click', () => {
+        show('setup');
+    });
+
+    // ---------- clap detection loop ----------
+    function detectLoop() {
+        requestAnimationFrame(detectLoop);
+        if (!analyser) return;
+
+        analyser.getByteTimeDomainData(timeData);
+        let peak = 0;
+        for (let i = 0; i < timeData.length; i++) {
+            const v = Math.abs(timeData[i] - 128) / 128;
+            if (v > peak) peak = v;
+        }
+
+        if (listening) {
+            $('level-bar').style.width = Math.min(100, peak * 100) + '%';
+
+            const threshold = parseInt($('sensitivity').value, 10) / 100;
+            const now = performance.now();
+            if (now >= armedAt &&
+                peak >= threshold &&
+                now - lastClapAt > CLAP_REFRACTORY_MS) {
+                lastClapAt = now;
+                onClap(now);
+            }
+        }
+    }
+    detectLoop();
+})();
+</script>
+</body>
+</html>
