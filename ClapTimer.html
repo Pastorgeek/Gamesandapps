@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0e1320">
 <title>Clap Timer Challenge</title>
 <style>
     :root {
@@ -31,13 +34,17 @@
         overscroll-behavior: none;
         user-select: none;
         -webkit-user-select: none;
+        -webkit-tap-highlight-color: transparent;
+        touch-action: manipulation;
         font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
         background: radial-gradient(120% 90% at 50% 0%, #16203a 0%, var(--bg) 55%);
         color: var(--ink);
         display: flex;
+        flex-direction: column;
         align-items: center;
-        justify-content: center;
         padding: 20px;
+        padding-top: max(20px, env(safe-area-inset-top));
+        padding-bottom: max(20px, env(safe-area-inset-bottom));
     }
 
     .screen {
@@ -48,7 +55,8 @@
         width: 100%;
         max-width: 430px;
     }
-    .screen.active { display: flex; }
+    /* margin auto centers vertically without clipping when content overflows */
+    .screen.active { display: flex; margin: auto 0; }
 
     .eyebrow {
         text-transform: uppercase;
@@ -108,11 +116,12 @@
         background: var(--surface-2);
         color: var(--ink);
         border-radius: 12px;
-        padding: 12px 0;
-        font-size: 18px;
+        padding: 16px 0;
+        font-size: 20px;
         font-weight: 800;
         font-family: inherit;
         cursor: pointer;
+        touch-action: manipulation;
     }
     .pc-btn.selected {
         background: var(--accent-deep);
@@ -179,10 +188,14 @@
         border: none;
         color: var(--muted);
         text-decoration: underline;
-        font-size: 14px;
+        font-size: 15px;
         font-family: inherit;
         cursor: pointer;
+        padding: 12px 16px; /* comfortable thumb target */
+        touch-action: manipulation;
     }
+
+    .btn { touch-action: manipulation; }
 
     .error {
         color: var(--red);
@@ -449,6 +462,26 @@
     var micStream = null;
     var lastClapAt = -Infinity;
 
+    // ---------- phone niceties ----------
+    var wakeLock = null;
+    function keepAwake() {
+        if (!('wakeLock' in navigator)) return;
+        navigator.wakeLock.request('screen').then(function (lock) {
+            wakeLock = lock;
+        }).catch(function () { /* not critical */ });
+    }
+    function releaseWake() {
+        if (wakeLock) { wakeLock.release().catch(function () {}); wakeLock = null; }
+    }
+    document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState !== 'visible') return;
+        if (listening) keepAwake();
+        if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    });
+    function buzz(ms) {
+        if (navigator.vibrate) navigator.vibrate(ms);
+    }
+
     // ---------- dom ----------
     function $(id) { return document.getElementById(id); }
     var screens = ['setup', 'intro', 'listen', 'result', 'final'];
@@ -564,10 +597,12 @@
         $('meter').classList.toggle('hidden', tapMode);
         setListenState(0);
         show('listen');
+        keepAwake();
     });
 
     $('btn-cancel-turn').addEventListener('click', function () {
         listening = false;
+        releaseWake();
         startTurn();
     });
 
@@ -596,9 +631,12 @@
         clapCount++;
         if (clapCount === 1) {
             clapStartTime = now;
+            buzz(30);
             setListenState(1);
         } else if (clapCount === 2) {
             listening = false;
+            releaseWake();
+            buzz([30, 60, 30]);
             finishTurn((now - clapStartTime) / 1000);
         }
     }
