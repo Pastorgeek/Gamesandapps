@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#111827">
+<title>Clap Clock Challenge</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<style>
+  :root{color-scheme:dark;}
+  body{
+    min-height:100vh; min-height:100dvh; margin:0;
+    font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif;
+    background:radial-gradient(circle at top,#312e81 0%,#111827 45%,#020617 100%);
+    color:#f8fafc; overscroll-behavior:none;
+  }
+  .glass{background:rgba(15,23,42,.72); border:1px solid rgba(148,163,184,.22); backdrop-filter:blur(14px); box-shadow:0 24px 70px rgba(0,0,0,.38);}
+  .btn{border-radius:1rem; font-weight:900; letter-spacing:.03em; transition:transform .12s ease, opacity .12s ease, filter .12s ease; -webkit-tap-highlight-color:transparent;}
+  .btn:active{transform:scale(.96);} .btn:disabled{opacity:.45; pointer-events:none; filter:grayscale(.35);}
+  .primary{background:linear-gradient(135deg,#22d3ee,#a78bfa,#f472b6); color:#020617;}
+  .secondary{background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.14);}
+  .danger{background:linear-gradient(135deg,#fb7185,#ef4444); color:#250404;}
+  .chip{border:1px solid rgba(255,255,255,.16); background:rgba(255,255,255,.07);}
+  .chip.active{background:linear-gradient(135deg,#fde047,#fb923c); color:#1c1917; border-color:transparent;}
+  .meter{height:12px; border-radius:999px; overflow:hidden; background:rgba(255,255,255,.08);}
+  .meter > div{height:100%; width:0%; background:linear-gradient(90deg,#22c55e,#facc15,#ef4444); transition:width .08s linear;}
+  @keyframes pulseRing{0%{box-shadow:0 0 0 0 rgba(34,211,238,.65);}100%{box-shadow:0 0 0 28px rgba(34,211,238,0);}}
+  .listening{animation:pulseRing 1s ease-out infinite;}
+  .score-row:nth-child(1){background:rgba(250,204,21,.14); border-color:rgba(250,204,21,.4);}
+</style>
+</head>
+<body>
+<main class="w-full max-w-5xl mx-auto p-4 md:p-8">
+  <section class="glass rounded-3xl p-5 md:p-8 mb-5 text-center">
+    <p class="text-cyan-300 font-black tracking-[.35em] text-xs uppercase">Sound timing game</p>
+    <h1 class="text-4xl md:text-6xl font-black mt-2 bg-clip-text text-transparent bg-gradient-to-r from-cyan-300 via-violet-300 to-pink-300">Clap Clock Challenge</h1>
+    <p class="text-slate-300 max-w-3xl mx-auto mt-4">Choose 1–4 players. Each player gets three rounds. Press <strong>Go</strong> to reveal a random target from 3–10 seconds, then clap once to start the hidden timer and clap again to stop it. Lowest total miss wins.</p>
+  </section>
+
+  <section id="setup" class="glass rounded-3xl p-5 md:p-7 mb-5">
+    <h2 class="text-2xl font-black mb-4">Game setup</h2>
+    <div class="flex flex-wrap gap-3 mb-5" id="playerButtons"></div>
+    <div class="grid md:grid-cols-2 gap-4 mb-5">
+      <label class="block"><span class="text-sm font-bold text-slate-300">Clap sensitivity</span><input id="sensitivity" type="range" min="18" max="80" value="38" class="w-full mt-2"></label>
+      <label class="block"><span class="text-sm font-bold text-slate-300">Cooldown between clap hits</span><input id="cooldown" type="range" min="250" max="900" value="450" class="w-full mt-2"></label>
+    </div>
+    <button id="startBtn" class="btn primary w-full py-4 text-xl">Start Game & Enable Microphone</button>
+    <p id="micStatus" class="text-sm text-slate-400 mt-3">Microphone access is needed so the browser can detect clap spikes. Audio is processed locally in this page.</p>
+  </section>
+
+  <section id="game" class="hidden grid lg:grid-cols-[1.15fr_.85fr] gap-5">
+    <div class="glass rounded-3xl p-5 md:p-7">
+      <div class="flex items-center justify-between gap-4 mb-4"><div><p id="turnLabel" class="text-cyan-300 font-black uppercase tracking-widest text-sm">Player 1 • Round 1</p><h2 id="targetLabel" class="text-5xl md:text-7xl font-black mt-1">--</h2></div><div class="text-right"><p class="text-slate-400 text-sm font-bold">Target window</p><p class="text-2xl font-black">3–10s</p></div></div>
+      <div class="meter mb-5"><div id="volumeBar"></div></div>
+      <div id="playPad" class="rounded-3xl border border-cyan-300/25 bg-cyan-300/5 p-6 text-center mb-5">
+        <p id="instruction" class="text-xl md:text-2xl font-black">Press Go to reveal your target.</p>
+        <p id="subInstruction" class="text-slate-300 mt-2">The countdown is hidden after the target is shown. Only claps start and stop the timer.</p>
+      </div>
+      <div class="grid sm:grid-cols-3 gap-3">
+        <button id="goBtn" class="btn primary py-4 text-lg">Go</button>
+        <button id="manualClapBtn" class="btn secondary py-4 text-lg">Manual Clap</button>
+        <button id="resetBtn" class="btn danger py-4 text-lg">New Game</button>
+      </div>
+      <p class="text-xs text-slate-500 mt-3">Manual Clap is included as a backup for quiet rooms or browsers with strict microphone behavior.</p>
+    </div>
+    <div class="glass rounded-3xl p-5 md:p-7">
+      <h2 class="text-2xl font-black mb-4">Scoreboard</h2>
+      <div id="scoreboard" class="space-y-3"></div>
+      <div id="winnerBox" class="hidden mt-5 p-4 rounded-2xl bg-yellow-400/15 border border-yellow-300/40"></div>
+    </div>
+  </section>
+</main>
+<script>
+const state={players:2,rounds:3,currentPlayer:0,currentRound:1,target:null,phase:'setup',startTime:null,scores:[],audio:null,analyser:null,data:null,lastClap:0,raf:null};
+const $=id=>document.getElementById(id);
+const playerButtons=$('playerButtons'),scoreboard=$('scoreboard');
+for(let i=1;i<=4;i++){const b=document.createElement('button');b.className='chip btn px-5 py-3 '+(i===2?'active':'');b.textContent=i+' Player'+(i>1?'s':'');b.onclick=()=>{state.players=i;[...playerButtons.children].forEach(x=>x.classList.remove('active'));b.classList.add('active');};playerButtons.appendChild(b);}
+function initScores(){state.scores=Array.from({length:state.players},(_,i)=>({name:`Player ${i+1}`,rounds:Array(state.rounds).fill(null),total:null}));}
+async function initMic(){try{const stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});const ctx=new (window.AudioContext||window.webkitAudioContext)();const src=ctx.createMediaStreamSource(stream);const analyser=ctx.createAnalyser();analyser.fftSize=1024;analyser.smoothingTimeConstant=.18;src.connect(analyser);state.audio=ctx;state.analyser=analyser;state.data=new Uint8Array(analyser.fftSize);$('micStatus').textContent='Microphone ready. Clap detection is live.';listen();}catch(e){$('micStatus').textContent='Microphone unavailable: use the Manual Clap button as backup.';}}
+function listen(){if(!state.analyser)return;state.analyser.getByteTimeDomainData(state.data);let peak=0;for(const v of state.data)peak=Math.max(peak,Math.abs(v-128));$('volumeBar').style.width=Math.min(100,peak*2)+'%';const threshold=+$('sensitivity').value;const now=performance.now();if(peak>threshold&&now-state.lastClap>+$('cooldown').value){state.lastClap=now;handleClap();}state.raf=requestAnimationFrame(listen);}
+function startGame(){initScores();state.currentPlayer=0;state.currentRound=1;state.phase='ready';$('setup').classList.add('hidden');$('game').classList.remove('hidden');$('winnerBox').classList.add('hidden');render();initMic();}
+function go(){if(state.phase!=='ready')return;state.target=Math.floor(Math.random()*8)+3;state.phase='armed';$('targetLabel').textContent=state.target.toFixed(3)+'s';$('instruction').textContent='Clap once to START. Clap again to STOP.';$('subInstruction').textContent='No countdown is shown. Try to wait exactly '+state.target+' seconds between claps.';$('playPad').classList.add('listening');renderButtons();}
+function handleClap(){if(state.phase==='armed'){state.startTime=performance.now();state.phase='running';$('instruction').textContent='Timer started — clap again to stop!';$('subInstruction').textContent='Listen to your internal clock. The target stays visible, but no countdown appears.';return;}if(state.phase==='running'){const elapsed=(performance.now()-state.startTime)/1000;const miss=Math.abs(elapsed-state.target);state.scores[state.currentPlayer].rounds[state.currentRound-1]={target:state.target,elapsed,miss};nextTurn();}}
+function nextTurn(){state.phase='ready';state.target=null;state.startTime=null;$('playPad').classList.remove('listening');if(state.currentPlayer<state.players-1){state.currentPlayer++;}else{state.currentPlayer=0;state.currentRound++;}if(state.currentRound>state.rounds){finishGame();}else{render();}}
+function finishGame(){state.phase='done';state.scores.forEach(p=>p.total=p.rounds.reduce((s,r)=>s+r.miss,0));state.scores.sort((a,b)=>a.total-b.total);$('winnerBox').classList.remove('hidden');$('winnerBox').innerHTML=`<h3 class="text-2xl font-black text-yellow-200">${state.scores[0].name} wins!</h3><p class="text-slate-200 mt-1">Lowest total miss: <strong>${state.scores[0].total.toFixed(3)}s</strong></p>`;render();}
+function render(){if(state.phase!=='done'){$('turnLabel').textContent=`Player ${state.currentPlayer+1} • Round ${state.currentRound}`;$('targetLabel').textContent='--';$('instruction').textContent='Press Go to reveal your target.';$('subInstruction').textContent='The countdown is hidden after the target is shown. Only claps start and stop the timer.';}renderButtons();renderScores();}
+function renderButtons(){$('goBtn').disabled=state.phase!=='ready';$('manualClapBtn').disabled=!['armed','running'].includes(state.phase);}
+function renderScores(){const rows=(state.phase==='done'?[...state.scores]:state.scores).map(p=>{const total=p.total??p.rounds.reduce((s,r)=>s+(r?r.miss:0),0);return `<div class="score-row rounded-2xl border border-white/10 bg-white/5 p-4"><div class="flex justify-between items-center"><strong>${p.name}</strong><span class="font-black">${total.toFixed(3)}s</span></div><div class="mt-2 grid grid-cols-3 gap-2 text-xs">${p.rounds.map((r,i)=>`<div class="rounded-lg bg-black/20 p-2"><b>R${i+1}</b><br>${r?`${r.elapsed.toFixed(3)}s<br><span class="text-pink-200">miss ${r.miss.toFixed(3)}</span>`:'--'}</div>`).join('')}</div></div>`;}).join('');scoreboard.innerHTML=rows;}
+$('startBtn').onclick=startGame;$('goBtn').onclick=go;$('manualClapBtn').onclick=handleClap;$('resetBtn').onclick=()=>location.reload();
+</script>
+</body>
+</html>
