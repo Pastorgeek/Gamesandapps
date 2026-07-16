@@ -5,28 +5,84 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="theme-color" content="#0e1320">
-<title>Tap Timer Challenge</title>
+<meta name="theme-color" content="#f2f2f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)">
+<title>Tap Timer</title>
 <style>
     :root {
-        --bg: #0e1320;
-        --surface: #19202f;
-        --surface-2: #222b3d;
-        --line: #2c3650;
-        --ink: #eef1f8;
-        --muted: #8b93a7;
-        --accent: #7c8cff;
-        --accent-deep: #5563e8;
-        --amber: #ffc24b;
-        --green: #41d98d;
-        --red: #ff6b7a;
+        --bg: #f2f2f7;
+        --cell: #ffffff;
+        --label: #000000;
+        --secondary: #6c6c70;
+        --tertiary: #aeaeb2;
+        --separator: rgba(60, 60, 67, 0.29);
+        --fill: rgba(120, 120, 128, 0.16);
+        --seg-selected: #ffffff;
+        --seg-shadow: 0 1px 4px rgba(0, 0, 0, 0.12), 0 3px 8px rgba(0, 0, 0, 0.06);
+        --tint: #007aff;
+        --green: #34c759;
+        --green-tint: rgba(52, 199, 89, 0.15);
+        --red: #ff3b30;
+        --red-tint: rgba(255, 59, 48, 0.15);
+        --orange: #ff9500;
+    }
+    @media (prefers-color-scheme: dark) {
+        :root {
+            --bg: #000000;
+            --cell: #1c1c1e;
+            --label: #ffffff;
+            --secondary: rgba(235, 235, 245, 0.6);
+            --tertiary: rgba(235, 235, 245, 0.3);
+            --separator: rgba(84, 84, 88, 0.65);
+            --fill: rgba(120, 120, 128, 0.24);
+            --seg-selected: #636366;
+            --seg-shadow: none;
+            --tint: #0a84ff;
+            --green: #30d158;
+            --green-tint: rgba(48, 209, 88, 0.18);
+            --red: #ff453a;
+            --red-tint: rgba(255, 69, 58, 0.18);
+            --orange: #ff9f0a;
+        }
+    }
+    :root[data-theme="light"] {
+        --bg: #f2f2f7;
+        --cell: #ffffff;
+        --label: #000000;
+        --secondary: #6c6c70;
+        --tertiary: #aeaeb2;
+        --separator: rgba(60, 60, 67, 0.29);
+        --fill: rgba(120, 120, 128, 0.16);
+        --seg-selected: #ffffff;
+        --seg-shadow: 0 1px 4px rgba(0, 0, 0, 0.12), 0 3px 8px rgba(0, 0, 0, 0.06);
+        --tint: #007aff;
+        --green: #34c759;
+        --green-tint: rgba(52, 199, 89, 0.15);
+        --red: #ff3b30;
+        --red-tint: rgba(255, 59, 48, 0.15);
+        --orange: #ff9500;
+    }
+    :root[data-theme="dark"] {
+        --bg: #000000;
+        --cell: #1c1c1e;
+        --label: #ffffff;
+        --secondary: rgba(235, 235, 245, 0.6);
+        --tertiary: rgba(235, 235, 245, 0.3);
+        --separator: rgba(84, 84, 88, 0.65);
+        --fill: rgba(120, 120, 128, 0.24);
+        --seg-selected: #636366;
+        --seg-shadow: none;
+        --tint: #0a84ff;
+        --green: #30d158;
+        --green-tint: rgba(48, 209, 88, 0.18);
+        --red: #ff453a;
+        --red-tint: rgba(255, 69, 58, 0.18);
+        --orange: #ff9f0a;
     }
 
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
-    html, body {
-        height: 100%;
-    }
+    html, body { height: 100%; }
 
     body {
         min-height: 100vh;
@@ -36,350 +92,395 @@
         -webkit-user-select: none;
         -webkit-tap-highlight-color: transparent;
         touch-action: manipulation;
-        font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-        background: radial-gradient(120% 90% at 50% 0%, #16203a 0%, var(--bg) 55%);
-        color: var(--ink);
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+        background: var(--bg);
+        color: var(--label);
         display: flex;
         flex-direction: column;
         align-items: center;
-        padding: 20px;
-        padding-top: max(20px, env(safe-area-inset-top));
-        padding-bottom: max(20px, env(safe-area-inset-bottom));
     }
 
     .screen {
         display: none;
         flex-direction: column;
-        align-items: center;
-        gap: 22px;
         width: 100%;
         max-width: 430px;
+        min-height: 100vh;
+        min-height: 100dvh;
+        padding: 0 16px;
+        padding-bottom: max(16px, env(safe-area-inset-bottom));
     }
-    /* margin auto centers vertically without clipping when content overflows */
-    .screen.active { display: flex; margin: auto 0; }
+    .screen.active { display: flex; }
 
-    .eyebrow {
-        text-transform: uppercase;
-        letter-spacing: 0.14em;
-        font-size: 12px;
-        font-weight: 700;
-        color: var(--muted);
-    }
-
-    h1 {
-        font-size: 38px;
-        font-weight: 800;
-        letter-spacing: -0.02em;
-        text-wrap: balance;
-        text-align: center;
-    }
-    h2 {
-        font-size: 28px;
-        font-weight: 800;
-        letter-spacing: -0.01em;
-        text-align: center;
-    }
-
-    .sub {
-        color: var(--muted);
-        text-align: center;
-        line-height: 1.55;
-        font-size: 15px;
-    }
-    .sub strong { color: var(--ink); }
-
-    .card {
-        width: 100%;
-        background: var(--surface);
-        border: 1px solid var(--line);
-        border-radius: 18px;
-        padding: 20px;
+    /* navigation bar */
+    .nav {
+        height: 52px;
+        margin: 0 -16px 4px;
+        padding-top: env(safe-area-inset-top);
         display: flex;
-        flex-direction: column;
-        gap: 16px;
+        align-items: center;
+        justify-content: center;
+        font-size: 17px;
+        font-weight: 600;
+        position: relative;
+        flex-shrink: 0;
+    }
+    .nav::after {
+        content: "";
+        position: absolute;
+        left: 0; right: 0; bottom: 0;
+        height: 0.5px;
+        background: var(--separator);
     }
 
-    .field-label {
+    .large-title {
+        font-size: 34px;
         font-weight: 700;
+        letter-spacing: 0.01em;
+        padding: 12px 0 4px;
+    }
+    .subtitle {
         font-size: 15px;
-        margin-bottom: 8px;
+        color: var(--secondary);
+        line-height: 1.4;
+        padding-bottom: 20px;
     }
 
+    /* grouped sections */
+    .sec-header {
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        color: var(--secondary);
+        padding: 0 16px 7px;
+    }
+    .sec-footer {
+        font-size: 13px;
+        color: var(--secondary);
+        line-height: 1.45;
+        padding: 8px 16px 0;
+    }
+    .section { margin-bottom: 24px; }
+
+    .group {
+        background: var(--cell);
+        border-radius: 10px;
+        overflow: hidden;
+    }
+    .row {
+        position: relative;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 12px 16px;
+        min-height: 44px;
+        font-size: 17px;
+    }
+    .row + .row::before {
+        content: "";
+        position: absolute;
+        left: 16px; right: 0; top: 0;
+        height: 0.5px;
+        background: var(--separator);
+    }
+    .row .value {
+        color: var(--secondary);
+        font-variant-numeric: tabular-nums;
+    }
+
+    /* segmented control */
     .pc-row {
-        display: grid;
-        grid-template-columns: repeat(4, 1fr);
-        gap: 8px;
+        display: flex;
+        background: var(--fill);
+        border-radius: 9px;
+        padding: 2px;
     }
     .pc-btn {
         appearance: none;
-        border: 1px solid var(--line);
-        background: var(--surface-2);
-        color: var(--ink);
-        border-radius: 12px;
-        padding: 16px 0;
-        font-size: 20px;
-        font-weight: 800;
+        flex: 1;
+        border: none;
+        background: transparent;
+        color: var(--label);
+        border-radius: 7px;
+        padding: 7px 0;
+        font-size: 15px;
+        font-weight: 500;
         font-family: inherit;
         cursor: pointer;
         touch-action: manipulation;
+        transition: background 0.15s ease;
     }
     .pc-btn.selected {
-        background: var(--accent-deep);
-        border-color: var(--accent);
+        background: var(--seg-selected);
+        box-shadow: var(--seg-shadow);
+        font-weight: 600;
     }
 
-    #name-inputs { display: flex; flex-direction: column; gap: 8px; }
     .name-input {
         width: 100%;
-        background: var(--surface-2);
-        border: 1px solid var(--line);
-        border-radius: 12px;
-        padding: 10px 14px;
-        color: var(--ink);
-        font-size: 16px;
+        border: none;
+        background: transparent;
+        padding: 12px 16px;
+        min-height: 44px;
+        font-size: 17px;
         font-family: inherit;
+        color: var(--label);
         outline: none;
     }
-    .name-input:focus { border-color: var(--accent); }
+    .name-input::placeholder { color: var(--tertiary); }
+    .input-row { position: relative; }
+    .input-row + .input-row::before {
+        content: "";
+        position: absolute;
+        left: 16px; right: 0; top: 0;
+        height: 0.5px;
+        background: var(--separator);
+    }
 
+    /* buttons */
     .btn {
         appearance: none;
         border: none;
         width: 100%;
-        border-radius: 16px;
-        padding: 18px;
-        font-size: 20px;
-        font-weight: 800;
+        border-radius: 12px;
+        min-height: 50px;
+        font-size: 17px;
+        font-weight: 600;
         font-family: inherit;
-        color: #fff;
-        background: linear-gradient(180deg, var(--accent) 0%, var(--accent-deep) 100%);
+        color: #ffffff;
+        background: var(--tint);
         cursor: pointer;
-        box-shadow: 0 8px 24px rgba(85, 99, 232, 0.35);
-        transition: transform 0.08s ease;
         touch-action: manipulation;
+        flex-shrink: 0;
     }
-    .btn:active { transform: scale(0.97); }
-    .btn.go {
-        background: linear-gradient(180deg, #35c97f 0%, #22a866 100%);
-        box-shadow: 0 8px 24px rgba(34, 168, 102, 0.35);
-        font-size: 22px;
-    }
-    .btn:focus-visible, .pc-btn:focus-visible, .link-btn:focus-visible {
-        outline: 2px solid var(--accent);
+    .btn:active { opacity: 0.75; }
+    .btn:focus-visible, .pc-btn:focus-visible, .text-btn:focus-visible, .tap-circle:focus-visible {
+        outline: 2px solid var(--tint);
         outline-offset: 2px;
     }
 
-    .link-btn {
+    .text-btn {
         appearance: none;
         background: none;
         border: none;
-        color: var(--muted);
-        text-decoration: underline;
-        font-size: 15px;
+        color: var(--tint);
+        font-size: 17px;
         font-family: inherit;
         cursor: pointer;
-        padding: 12px 16px; /* comfortable thumb target */
+        padding: 12px 16px;
         touch-action: manipulation;
+        align-self: center;
     }
+    .text-btn:active { opacity: 0.4; }
 
+    .spacer { flex: 1; }
     .hidden { display: none !important; }
 
-    .num, .big-num {
+    /* timer digits */
+    .digits {
         font-variant-numeric: tabular-nums;
-        font-weight: 800;
+        font-weight: 200;
+        letter-spacing: -0.01em;
+        line-height: 1;
     }
-    .target-num {
-        font-size: 58px;
-        color: var(--amber);
-        line-height: 1.1;
+    .digits .unit {
+        font-size: 0.45em;
+        font-weight: 300;
+        color: var(--secondary);
+        margin-left: 2px;
+    }
+    .caption {
+        font-size: 13px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--secondary);
     }
 
-    /* tap circle */
-    .circle-wrap {
-        position: relative;
-        width: 230px;
-        height: 230px;
+    .center-block {
         display: flex;
+        flex-direction: column;
         align-items: center;
-        justify-content: center;
+        gap: 8px;
+        text-align: center;
     }
-    .pulse-ring {
-        position: absolute;
-        inset: 0;
+
+    /* tap circle — stopwatch-style control */
+    .tap-circle {
+        appearance: none;
+        border: none;
+        font-family: inherit;
+        width: min(62vw, 240px);
+        aspect-ratio: 1;
         border-radius: 50%;
-        background: rgba(124, 140, 255, 0.35);
-        animation: pulse-ring 1.4s ease-out infinite;
-    }
-    .circle {
-        position: relative;
-        width: 196px;
-        height: 196px;
-        border-radius: 50%;
-        background: var(--surface);
-        border: 4px solid var(--accent);
+        background: var(--green-tint);
+        color: var(--green);
+        font-size: 20px;
+        font-weight: 600;
         display: flex;
         flex-direction: column;
         align-items: center;
         justify-content: center;
         gap: 6px;
-        text-align: center;
         cursor: pointer;
+        touch-action: manipulation;
+        align-self: center;
     }
-    .circle .emoji { font-size: 52px; line-height: 1; }
-    .circle .status { font-size: 14px; font-weight: 700; color: var(--ink); padding: 0 18px; }
-    .circle.running { border-color: var(--green); }
-    .circle-wrap.running .pulse-ring { background: rgba(65, 217, 141, 0.35); }
-
-    @keyframes pulse-ring {
-        0%   { transform: scale(1);   opacity: 0.6; }
-        100% { transform: scale(1.55); opacity: 0; }
+    .tap-circle:active { filter: brightness(0.92); }
+    .tap-circle.running {
+        background: var(--red-tint);
+        color: var(--red);
     }
-    @keyframes clap-flash {
-        0%   { transform: scale(1); }
-        30%  { transform: scale(1.18); }
-        100% { transform: scale(1); }
+    .timing-dot {
+        display: inline-block;
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        background: currentColor;
+        margin-right: 6px;
+        vertical-align: 1px;
+        animation: blink 1.2s ease-in-out infinite;
     }
-    .clap-flash { animation: clap-flash 0.35s ease-out; }
-    @keyframes pop {
-        0%   { transform: scale(0.9); opacity: 0; }
-        60%  { transform: scale(1.04); }
-        100% { transform: scale(1); opacity: 1; }
+    @keyframes blink {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.25; }
     }
-    .pop { animation: pop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); }
     @media (prefers-reduced-motion: reduce) {
-        .pulse-ring, .clap-flash, .pop { animation: none; }
+        .timing-dot { animation: none; }
+    }
+    .tap-sub {
+        font-size: 13px;
+        font-weight: 400;
+        color: var(--secondary);
     }
 
     /* result */
-    .result-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 14px;
-        text-align: center;
-    }
-    .stat-label { font-size: 13px; color: var(--muted); }
-    .stat-value { font-size: 26px; }
-    .stat-value.target { color: var(--amber); }
-    .stat-value.actual { color: var(--accent); }
-    .divider { border-top: 1px solid var(--line); margin: 2px 0; }
-    .diff-value { font-size: 52px; line-height: 1.1; }
     .diff-good { color: var(--green); }
-    .diff-mid  { color: var(--amber); }
+    .diff-mid  { color: var(--orange); }
     .diff-bad  { color: var(--red); }
-    .remark { font-size: 18px; text-align: center; }
 
-    /* final leaderboard */
-    #final-table { width: 100%; display: flex; flex-direction: column; gap: 10px; }
-    .rank-row {
-        display: flex;
-        align-items: center;
-        gap: 14px;
-        background: var(--surface);
-        border: 1px solid var(--line);
-        border-radius: 16px;
-        padding: 14px 16px;
+    /* leaderboard */
+    .rank-num {
+        width: 28px;
+        font-size: 17px;
+        font-weight: 600;
+        color: var(--secondary);
+        font-variant-numeric: tabular-nums;
+        flex-shrink: 0;
     }
-    .rank-row.winner { border-color: var(--amber); box-shadow: 0 0 0 1px var(--amber); }
-    .rank-medal { font-size: 28px; }
     .rank-info { flex: 1; min-width: 0; }
-    .rank-name { font-weight: 800; font-size: 17px; }
-    .rank-rounds { font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
-    .rank-total { text-align: right; }
-    .rank-total .num { font-size: 20px; }
-    .rank-row.winner .rank-total .num { color: var(--amber); }
-    .rank-total .stat-label { font-size: 11px; }
+    .rank-name { font-size: 17px; font-weight: 600; }
+    .rank-rounds {
+        font-size: 13px;
+        color: var(--secondary);
+        font-variant-numeric: tabular-nums;
+        margin-top: 1px;
+    }
+    .winner-tag {
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--orange);
+        margin-top: 2px;
+    }
+    .rank-total {
+        font-size: 17px;
+        font-weight: 600;
+        font-variant-numeric: tabular-nums;
+        text-align: right;
+    }
 </style>
 </head>
 <body>
 
     <!-- ============ SETUP ============ -->
-    <div id="screen-setup" class="screen active pop">
-        <div>
-            <h1>⏱️ Tap Timer</h1>
-            <p class="sub" style="margin-top:10px">Tap once to start a hidden timer, tap again to stop it as close to the target time as you can. Everyone gets the same target each round — lowest total difference after 3 rounds wins!</p>
-        </div>
+    <div id="screen-setup" class="screen active">
+        <div class="nav">Tap Timer</div>
+        <h1 class="large-title">New Game</h1>
+        <p class="subtitle">Match the target time between two taps.</p>
 
-        <div class="card">
-            <div>
-                <p class="field-label">Players</p>
-                <div class="pc-row" id="player-count-btns">
-                    <button type="button" data-count="1" class="pc-btn selected">1</button>
-                    <button type="button" data-count="2" class="pc-btn">2</button>
-                    <button type="button" data-count="3" class="pc-btn">3</button>
-                    <button type="button" data-count="4" class="pc-btn">4</button>
-                </div>
+        <div class="section">
+            <p class="sec-header">Players</p>
+            <div class="pc-row" id="player-count-btns">
+                <button type="button" data-count="1" class="pc-btn selected">1</button>
+                <button type="button" data-count="2" class="pc-btn">2</button>
+                <button type="button" data-count="3" class="pc-btn">3</button>
+                <button type="button" data-count="4" class="pc-btn">4</button>
             </div>
-            <div id="name-inputs"></div>
         </div>
 
-        <button type="button" id="btn-start-game" class="btn">Start Game 🎮</button>
+        <div class="section">
+            <p class="sec-header">Names</p>
+            <div class="group" id="name-inputs"></div>
+            <p class="sec-footer">Each round has one target time shared by all players. Tap once to start the timer, tap again to stop it as close to the target as you can. Lowest total difference after three rounds wins.</p>
+        </div>
+
+        <div class="spacer"></div>
+        <button type="button" id="btn-start-game" class="btn">Start Game</button>
     </div>
 
     <!-- ============ TURN INTRO ============ -->
-    <div id="screen-intro" class="screen pop">
-        <p class="eyebrow" id="intro-round"></p>
-        <h2 id="intro-player"></h2>
-        <div class="card" style="text-align:center; gap:6px">
-            <p class="stat-label">This round's target</p>
-            <p class="big-num target-num" id="intro-target"></p>
-            <p class="stat-label">seconds between your two taps</p>
+    <div id="screen-intro" class="screen">
+        <div class="nav" id="intro-round"></div>
+        <div class="spacer"></div>
+        <div class="center-block">
+            <p class="caption" id="intro-player"></p>
+            <p class="caption" style="margin-top:20px">Target</p>
+            <p class="digits" style="font-size:76px" id="intro-target"></p>
+            <p class="subtitle" style="padding-bottom:0">seconds between your two taps</p>
         </div>
-        <p class="sub">
-            Memorize it! After you press GO:<br>
-            <strong>Tap #1</strong> starts the timer &middot; <strong>Tap #2</strong> stops it.<br>
-            No countdown will be shown — trust your inner clock. ⏱️🙈
-        </p>
-        <button type="button" id="btn-go" class="btn go">GO 👆</button>
+        <div class="spacer"></div>
+        <p class="sec-footer" style="text-align:center; padding-bottom:16px">The timer stays hidden while it runs. Memorize the target, then trust your sense of time.</p>
+        <button type="button" id="btn-go" class="btn">Go</button>
     </div>
 
     <!-- ============ TAP SCREEN ============ -->
     <div id="screen-listen" class="screen">
-        <p class="eyebrow" id="listen-header"></p>
-        <div style="text-align:center">
-            <p class="stat-label">Target</p>
-            <p class="big-num" id="listen-target" style="font-size:30px; color:var(--amber)"></p>
+        <div class="nav" id="listen-header"></div>
+        <div class="center-block" style="padding-top:28px">
+            <p class="caption">Target</p>
+            <p class="digits" style="font-size:44px" id="listen-target"></p>
         </div>
-
-        <div class="circle-wrap" id="circle-wrap">
-            <div class="pulse-ring"></div>
-            <div class="circle" id="listen-circle">
-                <span class="emoji" id="listen-emoji">👆</span>
-                <span class="status" id="listen-status">Tap the circle to start</span>
-            </div>
-        </div>
-
-        <button type="button" id="btn-cancel-turn" class="link-btn">restart this turn</button>
+        <div class="spacer"></div>
+        <button type="button" class="tap-circle" id="listen-circle">
+            <span id="listen-status">Tap to Start</span>
+            <span class="tap-sub" id="listen-sub">first tap starts the timer</span>
+        </button>
+        <div class="spacer"></div>
+        <button type="button" id="btn-cancel-turn" class="text-btn">Restart Turn</button>
     </div>
 
     <!-- ============ RESULT ============ -->
-    <div id="screen-result" class="screen pop">
-        <h2 id="result-player"></h2>
-        <div class="card">
-            <div class="result-grid">
-                <div>
-                    <p class="stat-label">Target</p>
-                    <p class="big-num stat-value target" id="result-target"></p>
-                </div>
-                <div>
-                    <p class="stat-label">Your time</p>
-                    <p class="big-num stat-value actual" id="result-actual"></p>
-                </div>
-            </div>
-            <div class="divider"></div>
-            <div style="text-align:center">
-                <p class="stat-label">Difference</p>
-                <p class="big-num diff-value" id="result-diff"></p>
-            </div>
-            <p class="remark" id="result-remark"></p>
+    <div id="screen-result" class="screen">
+        <div class="nav" id="result-player"></div>
+        <div class="center-block" style="padding:36px 0 8px">
+            <p class="caption">Difference</p>
+            <p class="digits" style="font-size:64px" id="result-diff"></p>
+            <p class="subtitle" style="padding-bottom:0" id="result-remark"></p>
         </div>
+
+        <div class="section" style="margin-top:20px">
+            <div class="group">
+                <div class="row"><span>Target</span><span class="value" id="result-target"></span></div>
+                <div class="row"><span>Your Time</span><span class="value" id="result-actual"></span></div>
+            </div>
+        </div>
+
+        <div class="spacer"></div>
         <button type="button" id="btn-next" class="btn"></button>
     </div>
 
     <!-- ============ FINAL ============ -->
-    <div id="screen-final" class="screen pop">
-        <h1>🏆 Results</h1>
-        <div id="final-table"></div>
-        <button type="button" id="btn-again" class="btn">Play Again 🔁</button>
+    <div id="screen-final" class="screen">
+        <div class="nav">Final Results</div>
+        <div class="section" style="margin-top:20px">
+            <p class="sec-header">Standings</p>
+            <div class="group" id="final-table"></div>
+            <p class="sec-footer">Ranked by total difference across all three rounds.</p>
+        </div>
+        <div class="spacer"></div>
+        <button type="button" id="btn-again" class="btn">Play Again</button>
     </div>
 
 <script>
@@ -428,6 +529,7 @@
             var s = screens[i];
             $('screen-' + s).classList.toggle('active', s === name);
         }
+        window.scrollTo(0, 0);
     }
 
     // ---------- setup ----------
@@ -435,12 +537,15 @@
         var wrap = $('name-inputs');
         wrap.innerHTML = '';
         for (var i = 0; i < playerCount; i++) {
+            var rowDiv = document.createElement('div');
+            rowDiv.className = 'input-row';
             var input = document.createElement('input');
             input.type = 'text';
             input.maxLength = 14;
             input.placeholder = 'Player ' + (i + 1);
             input.className = 'name-input';
-            wrap.appendChild(input);
+            rowDiv.appendChild(input);
+            wrap.appendChild(rowDiv);
         }
     }
 
@@ -481,7 +586,7 @@
         releaseWake();
         $('intro-round').textContent = 'Round ' + (round + 1) + ' of ' + ROUNDS;
         $('intro-player').textContent = players[turn].name;
-        $('intro-target').textContent = target().toFixed(2) + 's';
+        $('intro-target').innerHTML = target().toFixed(2) + '<span class="unit">s</span>';
         show('intro');
     }
 
@@ -490,8 +595,8 @@
         lastTapAt = -Infinity;
         armedAt = performance.now() + ARM_DELAY_MS;
         playing = true;
-        $('listen-header').textContent = players[turn].name + ' — Round ' + (round + 1);
-        $('listen-target').textContent = target().toFixed(2) + 's';
+        $('listen-header').textContent = players[turn].name + ' · Round ' + (round + 1);
+        $('listen-target').innerHTML = target().toFixed(2) + '<span class="unit">s</span>';
         setTapState(0);
         show('listen');
         keepAwake();
@@ -502,24 +607,16 @@
     });
 
     function setTapState(count) {
-        var status = $('listen-status');
-        var emoji = $('listen-emoji');
         var circle = $('listen-circle');
-        var wrap = $('circle-wrap');
         if (count === 0) {
-            emoji.textContent = '👆';
-            status.textContent = 'Tap the circle to start';
             circle.classList.remove('running');
-            wrap.classList.remove('running');
+            $('listen-status').textContent = 'Tap to Start';
+            $('listen-sub').textContent = 'first tap starts the timer';
         } else {
-            emoji.textContent = '⏱️';
-            status.textContent = 'Timer running… tap to stop';
             circle.classList.add('running');
-            wrap.classList.add('running');
+            $('listen-status').innerHTML = '<span class="timing-dot"></span>Tap to Stop';
+            $('listen-sub').textContent = 'timer is running';
         }
-        circle.classList.remove('clap-flash');
-        void circle.offsetWidth; // restart animation
-        if (count > 0) circle.classList.add('clap-flash');
     }
 
     $('listen-circle').addEventListener('pointerdown', function () {
@@ -541,29 +638,29 @@
     });
 
     function remark(diff) {
-        if (diff < 0.05) return '🤯 Inhuman precision!';
-        if (diff < 0.15) return '🔥 Incredible!';
-        if (diff < 0.35) return '🎯 Great inner clock!';
-        if (diff < 0.75) return '👍 Not bad!';
-        if (diff < 1.5)  return '😅 Room to improve…';
-        return '🐢 Way off — practice makes perfect!';
+        if (diff < 0.05) return 'Perfect timing';
+        if (diff < 0.15) return 'Excellent';
+        if (diff < 0.35) return 'Great timing';
+        if (diff < 0.75) return 'Good';
+        if (diff < 1.5)  return 'Fair';
+        return 'Keep practicing';
     }
 
     function finishTurn(elapsed) {
         var diff = Math.abs(elapsed - target());
         players[turn].diffs.push(diff);
 
-        $('result-player').textContent = players[turn].name;
+        $('result-player').textContent = players[turn].name + ' · Round ' + (round + 1);
         $('result-target').textContent = target().toFixed(2) + 's';
         $('result-actual').textContent = elapsed.toFixed(3) + 's';
         var diffEl = $('result-diff');
-        diffEl.textContent = diff.toFixed(3) + 's';
-        diffEl.className = 'big-num diff-value ' +
+        diffEl.innerHTML = diff.toFixed(3) + '<span class="unit">s</span>';
+        diffEl.className = 'digits ' +
             (diff < 0.35 ? 'diff-good' : diff < 1 ? 'diff-mid' : 'diff-bad');
         $('result-remark').textContent = remark(diff);
 
         var isLastTurn = (turn === players.length - 1) && (round === ROUNDS - 1);
-        $('btn-next').textContent = isLastTurn ? 'See Final Results 🏆' : 'Next Turn ➡️';
+        $('btn-next').textContent = isLastTurn ? 'Final Results' : 'Next Turn';
         show('result');
     }
 
@@ -591,22 +688,19 @@
             return { name: p.name, diffs: p.diffs, total: total };
         }).sort(function (a, b) { return a.total - b.total; });
 
-        var medals = ['🥇', '🥈', '🥉', '4️⃣'];
         var html = '';
         for (var i = 0; i < ranked.length; i++) {
             var p = ranked[i];
-            var roundsTxt = p.diffs.map(function (d) { return d.toFixed(3) + 's'; }).join(' · ');
+            var roundsTxt = p.diffs.map(function (d) { return d.toFixed(3); }).join(' · ');
             html +=
-                '<div class="rank-row' + (i === 0 ? ' winner' : '') + '">' +
-                    '<span class="rank-medal">' + medals[i] + '</span>' +
+                '<div class="row">' +
+                    '<span class="rank-num">' + (i + 1) + '</span>' +
                     '<div class="rank-info">' +
-                        '<p class="rank-name">' + escapeHtml(p.name) + '</p>' +
-                        '<p class="rank-rounds">rounds: ' + roundsTxt + '</p>' +
+                        '<div class="rank-name">' + escapeHtml(p.name) + '</div>' +
+                        '<div class="rank-rounds">' + roundsTxt + '</div>' +
+                        (i === 0 && ranked.length > 1 ? '<div class="winner-tag">Winner</div>' : '') +
                     '</div>' +
-                    '<div class="rank-total">' +
-                        '<p class="num">' + p.total.toFixed(3) + 's</p>' +
-                        '<p class="stat-label">total off</p>' +
-                    '</div>' +
+                    '<span class="rank-total"' + (i === 0 ? ' style="color:var(--tint)"' : '') + '>' + p.total.toFixed(3) + 's</span>' +
                 '</div>';
         }
         $('final-table').innerHTML = html;
