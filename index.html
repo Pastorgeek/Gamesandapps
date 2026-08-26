@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1a1711">
+<title>School Trail — Survive Monday</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="wrap">
+<header class="top"><div><h1>SCHOOL TRAIL</h1><p>8-BIT MONDAY SURVIVAL</p></div><div class="row"><button id="saveBtn">SAVE</button><button id="loadBtn">LOAD</button></div></header>
+<section id="start" class="box pad">
+<div class="tag">START GAME</div><h2>Survive one day of school.</h2><p class="muted">Short choices. Simple graphics. Big consequences.</p>
+<div class="formgrid">
+<label>Name<input id="nameInput" value="Alex" maxlength="18"></label>
+<label>Grade<select id="gradeInput"><option>6th</option><option>7th</option><option>8th</option><option>9th</option><option selected>10th</option><option>11th</option><option>12th</option></select></label>
+<label>Type<select id="typeInput"><option value="balanced">Balanced</option><option value="scholar">Scholar</option><option value="social">Social</option><option value="resilient">Resilient</option></select></label>
+<label>Mode<select id="difficultyInput"><option value="easy">Easy</option><option value="classic" selected>Classic</option><option value="hard">Hard</option></select></label>
+</div>
+<label class="check"><input id="faithInput" type="checkbox" checked> Faith & Character Lens</label>
+<button id="startBtn" class="mainbtn">▶ START MONDAY</button>
+</section>
+<section id="game" class="hidden">
+<div class="box"><canvas id="sceneCanvas" width="320" height="180"></canvas><div class="pad"><div class="between"><strong><span id="hudTime"></span> // <span id="hudLoc"></span></strong><div class="row"><button id="lensBtn">LENS: ON</button><button id="restartBtn">RESTART</button></div></div><div class="progress"><div id="prog"></div></div></div></div>
+<div class="grid">
+<main class="box pad"><div id="sceneKicker" class="tag"></div><h2 id="sceneTitle"></h2><div id="feedback" class="feedback hidden"></div><div id="lesson" class="lesson hidden"></div><div id="sceneText"></div><div id="choices" class="menu"></div><div id="mini" class="hidden"></div></main>
+<aside>
+<div class="box pad"><div class="tag">PLAYER</div><strong id="playerName"></strong> <span class="muted">// <span id="playerGrade"></span></span></div>
+<div class="box pad side"><div class="tag">STATS</div><div id="stats"></div></div>
+<div class="box pad side"><div class="tag">PACK</div><div id="inventory" class="chips"></div></div>
+<div class="box pad side"><div class="tag">BADGES</div><div id="achievements" class="chips"></div></div>
+<div class="box pad side"><div class="tag">LOG</div><div id="history" class="muted log"></div></div>
+</aside>
+</div>
+</section>
+<section id="ending" class="hidden box pad center"><div class="tag">DAY COMPLETE</div><div id="endingScore" class="score"></div><h2 id="endingTitle"></h2><p id="endingText"></p><hr><div id="endingStats" class="muted"></div><hr><div id="endingReflection" class="muted"></div><button id="againBtn" class="mainbtn">PLAY AGAIN</button></section>
+<footer>Standalone HTML game • Works on phones, tablets, and computers</footer>
+</div>
+<script src="app.js"></script>
+</body>
+</html>
