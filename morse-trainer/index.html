@@ -2086,7 +2086,7 @@ const Listener = {
   reset() {
     Object.assign(this, {
       floorDb: null, peakDb: null, on: false, onCount: 0, offCount: 0, streakStart: 0, offStart: 0,
-      markStart: 0, lastMarkEnd: 0, gapState: 'idle', marks: [], gaps: [], pending: [],
+      markStart: 0, lastMarkEnd: 0, gapState: 'idle', marks: [], gaps: [], pending: [], events: [], curGap: Infinity, locked: !settings.listenAuto, backlog: [],
       unit: 100, dashThr: 200, tuneCand: 0, tuneStable: 0, procCalls: 0, lastPreview: null,
       levelDb: -120, thrDb: -120, ratio: 0,
     });
@@ -2147,6 +2147,7 @@ const Listener = {
 
     this.starting = false; this.active = true;
     Input.reset();
+    this.prefix = Listen.message ? Listen.message.replace(/\s*$/, ' ') : '';
     this.status('LISTENING', 'on');
     this.syncButton();
     this.drawLoop();
@@ -2170,11 +2171,22 @@ const Listener = {
   /** Raw samples → fixed-size blocks. */
   process(x) {
     if (!this.active) return;
+    if (settings.listenAuto && (!this.locked || ++this.procCalls % 4 === 0)) this.autoTune();
+    if (!this.locked) {
+      // Until the sender's pitch is found, hold ~1 s of audio so the first beeps
+      // can be replayed through the detector once we lock on.
+      this.backlog.push(Float32Array.from(x));
+      if (this.backlog.length > 48) this.backlog.shift();
+      return;
+    }
+    if (this.backlog.length) { const b = this.backlog; this.backlog = []; b.forEach(c => this.feed(c)); }
+    this.feed(x);
+  },
+  feed(x) {
     for (let i = 0; i < x.length; i++) {
       this.buf[this.bufPos++] = x[i];
       if (this.bufPos === this.N) { this.clock += this.N; this.block(); this.bufPos = 0; }
     }
-    if (++this.procCalls % 4 === 0 && settings.listenAuto) this.autoTune();
   },
 
   block() {
@@ -2240,10 +2252,8 @@ const Listener = {
   },
 
   markBegin(t) {
-    if ((this.gapState === 'intra' || this.gapState === 'letter') && this.lastMarkEnd) {
-      const gap = t - this.lastMarkEnd;
-      if (gap < 4000) { this.gaps.push(gap); if (this.gaps.length > 20) this.gaps.shift(); }
-    }
+    this.curGap = this.lastMarkEnd ? t - this.lastMarkEnd : Infinity;
+    if (this.curGap < 4000) { this.gaps.push(this.curGap); if (this.gaps.length > 40) this.gaps.shift(); }
     this.markStart = t;
     Input.holdTimers();
     const led = $('#rxLed'); if (led) led.classList.add('tone');
@@ -2260,6 +2270,7 @@ const Listener = {
     this.lastMarkEnd = t;
     this.gapState = 'intra';
     this.pending.push(dur);
+    this.events.push({ d: dur, g: this.curGap }); if (this.events.length > 800) this.events.shift();
     Input.addSymbol(sym, 'mic', { external: true });
     if (Input.seq.length >= 6) { this.commitLetter(); this.gapState = 'letter'; }
     this.updateMeta();
@@ -2282,7 +2293,7 @@ const Listener = {
     }
     if (best) {
       this.unit = (best.ma + best.mb / 3) / 2;
-      this.dashThr = clamp((best.ma + best.mb) / 2, best.ma * 1.35, best.mb * 0.85);
+      this.dashThr = clamp(Math.sqrt(best.ma * best.mb) * 1.08, best.ma * 1.35, best.mb * 0.8);   // geometric: suits proportional hand jitter
     } else if (sym === '.') {
       this.unit += (dur - this.unit) * (m.length <= 2 ? 0.8 : 0.4);
       this.dashThr = this.unit * 2.2;
@@ -2309,20 +2320,57 @@ const Listener = {
     return best;
   },
 
-  /** Letter / word gap thresholds learned from the sender's actual pauses. */
+  /** Letter / word gap thresholds learned from the sender's actual pauses.
+      Finds the natural break between short (inside-letter) and long (between-letter)
+      pauses, then the break between letter and word pauses. */
   gapThresholds() {
-    const mult = GAP_MULT[settings.listenGap] || 1;
-    const c = this.twoMeans(this.gaps, 2);
-    let letter, word;
-    if (c) {
-      letter = clamp(Math.sqrt(c.ma * c.mb), c.ma * 1.5, c.mb * 0.75);
-      word = Math.max(letter * 1.9, c.mb * 1.55, 5 * this.unit);
+    const mult = GAP_MULT[settings.listenGap] || 1, u = this.unit;
+    const s = [...this.gaps].sort((a, b) => a - b), n = s.length;
+    const dashes = this.marks.filter(d => d >= this.dashThr);
+    const dashAvg = dashes.length ? avg(dashes) : 3 * u;
+    // A letter gap is roughly one dash long, never several — this cap stops the
+    // letter/word break from being mistaken for the intra/letter break.
+    const cap = Math.max(2.6 * dashAvg, 8 * u);
+    let letter, word, brk = 0;
+    if (n >= 6) {
+      const cands = [];
+      for (let k = Math.max(1, Math.ceil(n * 0.2)); k <= n - Math.max(1, Math.floor(n * 0.12)); k++) {
+        const r = s[k] / s[k - 1];
+        if (r >= 1.5 && Math.sqrt(s[k - 1] * s[k]) <= cap) cands.push({ k, r });
+      }
+      if (cands.length) {
+        const maxR = Math.max(...cands.map(c => c.r));
+        brk = cands.find(c => c.r >= maxR * 0.75).k;     // prefer the lowest strong break
+      }
+    }
+    if (brk) {
+      letter = Math.max(Math.sqrt(s[brk - 1] * s[brk]), 2.2 * u);
+      const up = s.slice(brk);
+      let wb = 0, best = 1.6;
+      for (let k = 1; k < up.length; k++) { const r = up[k] / up[k - 1]; if (r > best) { best = r; wb = k; } }
+      word = wb ? Math.max(Math.sqrt(up[wb - 1] * up[wb]), letter * 1.8) : Math.max(letter * 2, median(up) * 1.6, 5 * u);
     } else {
-      const g = median(this.gaps);
-      letter = Math.max(2.8 * this.unit, g ? g * 1.7 : 0);
-      word = Math.max(6 * this.unit, letter * 2.2);
+      // Early on: dashes are about as long as letter gaps, so use them as a guide.
+      letter = Math.max(2.8 * u, dashes.length ? dashAvg * 0.9 : 0);
+      word = Math.max(6 * u, letter * 2.2);
     }
     return { letter: Math.max(90, letter * mult), word: word * mult };
+  },
+
+  /** Re-read everything received so far with the latest timing knowledge.
+      Early letters get corrected once the decoder has learned the sender's rhythm. */
+  redecode(trailingSpace) {
+    const { letter, word } = this.gapThresholds(), thr = this.dashThr;
+    let out = '', seq = '';
+    const flush = () => { if (seq) { out += decode(seq) || '*'; seq = ''; } };
+    for (const e of this.events) {
+      if (e.g > letter) { flush(); if (e.g > word && out && !out.endsWith(' ')) out += ' '; }
+      seq += e.d < thr ? '.' : '-';
+    }
+    flush();
+    if (trailingSpace && out && !out.endsWith(' ')) out += ' ';
+    const msg = (this.prefix || '') + out;
+    if (msg !== Listen.message) { Listen.message = msg; Listen.freshUntil = now() + 600; Listen.save(); Listen.render(); setTimeout(() => Listen.render(), 620); }
   },
 
   /** Re-check the letter's marks against the latest speed estimate, then commit. */
@@ -2349,6 +2397,7 @@ const Listener = {
     const off = (a - c) / (2 * (a - 2 * b + c)) || 0;
     const f = (mi + clamp(off, -0.5, 0.5)) * hz;
     if (Math.abs(f - this.tuneCand) < 25) this.tuneStable++; else { this.tuneStable = 0; this.tuneCand = f; }
+    if (!this.locked && this.tuneStable >= 1) { this.setFreq(f); this.locked = true; this.tuneStable = 0; this.status('LISTENING', 'on'); return; }
     if (this.tuneStable >= 2 && Math.abs(f - this.f0) > 30) { this.setFreq(f); this.tuneStable = 0; }
   },
 
@@ -2401,7 +2450,7 @@ const Listener = {
     $('#rxBtn').onclick = () => this.active ? this.stop() : this.start();
     const auto = $('#rxAuto');
     const syncAuto = () => auto.classList.toggle('sel', !!settings.listenAuto);
-    auto.onclick = () => { settings.listenAuto = !settings.listenAuto; saveSettings(); syncAuto(); if (!settings.listenAuto && this.active) this.setFreq(settings.toneHz); UI.toast(settings.listenAuto ? 'Auto pitch on' : `Pitch fixed at ${settings.toneHz} Hz`); };
+    auto.onclick = () => { settings.listenAuto = !settings.listenAuto; saveSettings(); syncAuto(); if (!settings.listenAuto && this.active) { this.setFreq(settings.toneHz); this.locked = true; } UI.toast(settings.listenAuto ? 'Auto pitch on' : `Pitch fixed at ${settings.toneHz} Hz`); };
     syncAuto();
     const syncGap = () => $$('#rxGap .chip').forEach(c => c.classList.toggle('sel', c.dataset.g === settings.listenGap));
     $$('#rxGap .chip').forEach(c => c.onclick = () => { settings.listenGap = c.dataset.g; saveSettings(); syncGap(); });
@@ -2420,10 +2469,14 @@ Object.assign(Listen, {
   baseEnter: Listen.enter, baseLetter: Listen.onLetter,
   enter(el) { this.baseEnter(el); Listener.bindUI(); },
   exit() { Listener.stop(); },
+  baseSpace: Listen.onWordSpace, baseClear: Listen.onClearAll,
   onLetter(seq, ch) {
+    if (Listener.active) { Listener.redecode(false); return ch ? null : false; }
     if (!ch) { this.message += '*'; this.save(); this.render(); return false; }   // * = unreadable letter
     return this.baseLetter(seq, ch);
-  }
+  },
+  onWordSpace(src) { if (Listener.active) Listener.redecode(true); else this.baseSpace(src); },
+  onClearAll() { Listener.events = []; Listener.prefix = ''; this.baseClear(); }
 });
 
 /* ----- Mode registry ----- */
@@ -2732,7 +2785,7 @@ function boot() {
 boot();
 
 // Expose internals for debugging / future extensions (e.g. window.MorseApp.Bus.on('letter', ...)).
-window.ListenerDbg = Listener;
+window.ListenerDbg = Listener;   // debugging handle for the mic receiver
 window.MorseApp = { MORSE, decode, Bus, Input, Keyer, Tree, Modes, Transmitter, Sound, Haptics, settings };
 </script>
 </body>
