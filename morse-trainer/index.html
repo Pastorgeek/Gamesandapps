@@ -315,6 +315,21 @@ input[type=range]::-moz-range-thumb{width:20px;height:20px;border-radius:50%;bac
   box-shadow:0 10px 30px rgba(0,0,0,.5),0 0 20px rgba(56,232,255,.15);opacity:0;pointer-events:none;transition:opacity .2s, transform .2s;max-width:86vw;text-align:center}
 .toast.show{opacity:1;transform:translate(-50%,0)}
 
+
+/* ---------- Listen mode scope ---------- */
+.scope{display:none;flex:none;flex-direction:column;gap:8px;border-radius:20px;border:1px solid var(--edge-hi);padding:12px;
+  background:linear-gradient(180deg,#111b23,#0a1117);box-shadow:0 6px 0 #04070a, inset 0 1px 0 rgba(255,255,255,.06)}
+body[data-mode="listen"] .pad, body[data-mode="listen"] .keys{display:none}
+body[data-mode="listen"] .scope{display:flex}
+body[data-mode="listen"] .msg{height:96px;font-size:24px}
+#rxCanvas{width:100%;height:clamp(56px,10dvh,96px);border-radius:10px;background:repeating-linear-gradient(90deg,rgba(255,255,255,.025) 0 1px,transparent 1px 24px),#050c11;border:1px solid var(--edge);display:block}
+.rxled{width:10px;height:10px;border-radius:50%;background:#26343e;display:inline-block;transition:background .05s, box-shadow .05s}
+.rxled.live{background:#1d6a78}
+.rxled.tone{background:var(--on);box-shadow:0 0 12px var(--on),0 0 24px var(--on)}
+.rxmeta{gap:10px;font:700 10px/1 var(--mono);color:var(--muted);letter-spacing:.06em}
+.rxbtn{height:42px;justify-content:center;font-size:11px}
+.lab.on{color:var(--on)}.lab.bad{color:var(--bad)}
+
 /* =====================================================================
    SVG TREE STYLES
    ===================================================================== */
@@ -481,6 +496,23 @@ body.nonum .dgrp{display:none}
     <button class="key" id="kBack" aria-label="Backspace"><svg viewBox="0 0 24 24"><path d="M21 5H9l-6 7 6 7h12z"/><path d="M17 9l-6 6M11 9l6 6"/></svg><small>BACK</small></button>
     <button class="key" id="kClear" aria-label="Clear letter (hold to clear message)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M9 9l6 6M15 9l-6 6"/></svg><small>CLR</small></button>
   </section>
+
+  <!-- ===== Listen-mode receiver scope (replaces pad + keys) ===== -->
+  <section class="scope" id="scope">
+    <div class="row between">
+      <div class="row"><i class="rxled" id="rxLed"></i><span class="lab" id="rxStatus">MIC OFF</span></div>
+      <div class="row rxmeta"><span id="rxFreq">640 Hz</span><span id="rxWpm">— WPM</span><span id="rxSnr">— dB</span></div>
+    </div>
+    <canvas id="rxCanvas" aria-hidden="true"></canvas>
+    <div class="row">
+      <button class="mini primary grow rxbtn" id="rxBtn"></button>
+      <button class="chip" id="rxAuto">AUTO PITCH</button>
+    </div>
+    <div class="row between">
+      <span class="lab">LETTER SPACING</span>
+      <div class="chips" id="rxGap"><button class="chip" data-g="tight">TIGHT</button><button class="chip" data-g="normal">NORMAL</button><button class="chip" data-g="loose">LOOSE</button></div>
+    </div>
+  </section>
 </div>
 
 <!-- ===== Bottom sheet ===== -->
@@ -540,6 +572,7 @@ const ICON = {
   share:'<svg viewBox="0 0 24 24"><path d="M12 3v13M7 8l5-5 5 5M5 14v6h14v-6"/></svg>',
   bulb:'<svg viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.5 1 2.5h6c0-1 .3-1.8 1-2.5A6 6 0 0 0 12 3z"/></svg>',
   skip:'<svg viewBox="0 0 24 24"><path d="M5 5l9 7-9 7zM18 5v14"/></svg>',
+  mic:'<svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg>',
   restart:'<svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>',
 };
 
@@ -610,6 +643,9 @@ const DEFAULTS = {
   toneHz: 640,
   volume: 0.7,
   wpm: 14,             // playback speed for hints / transmit
+  listenSnr: 10,       // dB above noise floor needed to count as a tone
+  listenAuto: true,    // auto-detect the sender's pitch
+  listenGap: 'normal', // letter spacing tolerance: tight | normal | loose
 };
 const settings = Object.assign({}, DEFAULTS, Store.get('settings', {}));
 function saveSettings() { Store.set('settings', settings); applySettings(); }
@@ -1184,7 +1220,7 @@ const Input = {
   letterTimer: 0, wordTimer: 0, clearTimer: 0,
   lastSymbolAt: 0, firstSymbolAt: 0,
 
-  addSymbol(sym, src) {
+  addSymbol(sym, src, opts = {}) {
     Transmitter.stop();
     if (this.seq.length >= MAX_SEQ) return;              // ignore runaway input
     clearTimeout(this.clearTimer); clearTimeout(this.wordTimer);
@@ -1194,6 +1230,7 @@ const Input = {
     Bus.emit('symbol', { sym, seq: this.seq, src });
     UI.updateSeq();
     Tree.setPath(this.seq);
+    if (opts.external) return;                           // Listen mode times its own gaps
     this.armLetterTimer();                                // timer restarts after EVERY symbol
   },
 
@@ -1266,7 +1303,7 @@ const Keyer = {
   pressing: false, t0: 0, raf: 0, crossed: false,
 
   down() {
-    if (this.pressing || UI.sheetOpen) return;
+    if (this.pressing || UI.sheetOpen || (Modes.current && Modes.current.noKey)) return;
     Transmitter.stop();
     this.pressing = true; this.t0 = now(); this.crossed = false;
     Input.holdTimers();                                  // a held key can never trigger a commit
@@ -1375,9 +1412,9 @@ function makeMessageMode(id, label, opts = {}) {
     enter(el) {
       el.innerHTML = `
         <div class="row between">
-          <span class="lab">${opts.big ? 'DECODED MESSAGE' : 'MESSAGE'} · <span id="mCount">0</span></span>
+          <span class="lab">${opts.title || (opts.big ? 'DECODED MESSAGE' : 'MESSAGE')} · <span id="mCount">0</span></span>
           <div class="row">
-            ${opts.big ? `<button class="mini" id="mPlay">${ICON.play}PLAY</button><button class="mini" id="mCopy">${ICON.copy}COPY</button>` : ''}
+            ${opts.big ? `${opts.noPlay ? '' : `<button class="mini" id="mPlay">${ICON.play}PLAY</button>`}<button class="mini" id="mCopy">${ICON.copy}COPY</button>` : ''}
             <button class="mini ghost" id="mClear" aria-label="Clear message">${ICON.trash}</button>
           </div>
         </div>
@@ -1389,7 +1426,7 @@ function makeMessageMode(id, label, opts = {}) {
           const ok = await copyText(this.message.trim());
           UI.toast(this.message.trim() ? (ok ? 'Message copied' : 'Copy failed — select manually') : 'Nothing to copy yet');
         };
-        $('#mPlay', el).onclick = () => {
+        if (!opts.noPlay) $('#mPlay', el).onclick = () => {
           if (Transmitter.playing) { Transmitter.stop(); return; }
           const txt = this.message.trim(); if (!txt) { UI.toast('Send some Morse first'); return; }
           Transmitter.play(txt, { onSymbol: s => Tree.setPath(s), onCharEnd: () => setTimeout(() => !Input.seq && Tree.setPath(''), 120), onDone: () => Tree.setPath('') });
@@ -1402,7 +1439,7 @@ function makeMessageMode(id, label, opts = {}) {
     render() {
       const t = $('#mText'); if (!t) return;
       const m = this.message;
-      if (!m) t.innerHTML = `<span class="empty">${opts.big ? 'Tap and hold the pad below. Letters appear here automatically after a short pause.' : 'Tap = dot, hold = dash. Pause to finish a letter.'}</span><i class="caret"></i>`;
+      if (!m) t.innerHTML = `<span class="empty">${opts.placeholder ? opts.placeholder : opts.big ? 'Tap and hold the pad below. Letters appear here automatically after a short pause.' : 'Tap = dot, hold = dash. Pause to finish a letter.'}</span><i class="caret"></i>`;
       else {
         const fresh = now() < this.freshUntil;
         const body = fresh ? esc(m.slice(0, -1)) + `<span class="fresh">${esc(m.slice(-1))}</span>` : esc(m);
@@ -2031,10 +2068,368 @@ const Challenge = {
   }
 };
 
+/* ----- LISTEN (microphone receiver) -----
+   Pipeline: mic → ScriptProcessor → Hann-windowed Goertzel filter at the
+   tone pitch every ~8 ms → adaptive noise floor / threshold with hysteresis
+   → mark & gap durations (timed by sample count, so jitter-free) →
+   adaptive dot/dash + letter/word gap classification → Input + Tree.
+   An AnalyserNode FFT finds the strongest steady tone (auto pitch). */
+const median = arr => { if (!arr.length) return null; const s = [...arr].sort((a, b) => a - b); return s[Math.floor(s.length / 2)]; };
+const GAP_MULT = { tight: 0.8, normal: 1, loose: 1.45 };
+
+const Listener = {
+  active: false, starting: false,
+  ctx: null, stream: null, src: null, proc: null, analyser: null, sink: null,
+  fs: 48000, N: 384, f0: 640, coeff: 0, win: null, buf: null, bufPos: 0, clock: 0,
+  HIST: 480, hLevel: null, hThr: null, hOn: null, hIdx: 0,
+
+  reset() {
+    Object.assign(this, {
+      floorDb: null, peakDb: null, on: false, onCount: 0, offCount: 0, streakStart: 0, offStart: 0,
+      markStart: 0, lastMarkEnd: 0, gapState: 'idle', marks: [], gaps: [], pending: [],
+      unit: 100, dashThr: 200, tuneCand: 0, tuneStable: 0, procCalls: 0, lastPreview: null,
+      levelDb: -120, thrDb: -120, ratio: 0,
+    });
+    this.hLevel = new Float32Array(this.HIST).fill(-120);
+    this.hThr = new Float32Array(this.HIST).fill(-120);
+    this.hOn = new Uint8Array(this.HIST);
+    this.hIdx = 0;
+  },
+
+  setFreq(f) {
+    this.f0 = clamp(f, 250, 2000);
+    this.coeff = 2 * Math.cos(2 * Math.PI * this.f0 / this.fs);
+    this.updateMeta();
+  },
+
+  async start() {
+    if (this.active || this.starting) return;
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      this.status(window.isSecureContext ? 'MIC NOT SUPPORTED' : 'NEEDS HTTPS', 'bad');
+      UI.toast(window.isSecureContext ? 'This browser can\'t use the microphone' : 'Open the https:// link to use the microphone');
+      return;
+    }
+    const ctx = Sound.init();
+    if (!ctx) { this.status('NO AUDIO SUPPORT', 'bad'); return; }
+    this.starting = true;
+    this.status('ASKING FOR MIC…');
+    try {
+      this.stream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false, channelCount: 1 }
+      });
+    } catch (e) {
+      this.starting = false;
+      const denied = e && (e.name === 'NotAllowedError' || e.name === 'SecurityError');
+      this.status(denied ? 'MIC BLOCKED' : 'NO MICROPHONE', 'bad');
+      UI.toast(denied ? 'Microphone blocked — allow it in your browser settings for this site' : 'No microphone found', 3200);
+      return;
+    }
+    if (ctx.state !== 'running') { try { await ctx.resume(); } catch (e) {} }
+    this.ctx = ctx;
+    this.fs = ctx.sampleRate;
+    this.N = Math.round(this.fs * 0.008);             // ~8 ms analysis blocks
+    this.win = new Float32Array(this.N);
+    for (let i = 0; i < this.N; i++) this.win[i] = 0.5 - 0.5 * Math.cos(2 * Math.PI * i / (this.N - 1));
+    this.buf = new Float32Array(this.N); this.bufPos = 0; this.clock = 0;
+    this.reset();
+    this.setFreq(settings.toneHz);
+
+    this.src = ctx.createMediaStreamSource(this.stream);
+    this.analyser = ctx.createAnalyser();
+    this.analyser.fftSize = 4096; this.analyser.smoothingTimeConstant = 0;
+    this.fftData = new Float32Array(this.analyser.frequencyBinCount);
+    this.proc = ctx.createScriptProcessor(1024, 1, 1);
+    this.sink = ctx.createGain(); this.sink.gain.value = 0;   // processor must reach destination to run
+    this.src.connect(this.analyser);
+    this.src.connect(this.proc);
+    this.proc.connect(this.sink); this.sink.connect(ctx.destination);
+    this.proc.onaudioprocess = e => this.process(e.inputBuffer.getChannelData(0));
+
+    this.starting = false; this.active = true;
+    Input.reset();
+    this.status('LISTENING', 'on');
+    this.syncButton();
+    this.drawLoop();
+  },
+
+  stop(reason) {
+    if (this.starting) return;
+    if (this.active) this.commitLetter();
+    this.active = false;
+    try { this.proc && (this.proc.onaudioprocess = null); } catch (e) {}
+    [this.src, this.analyser, this.proc, this.sink].forEach(n => { try { n && n.disconnect(); } catch (e) {} });
+    if (this.stream) this.stream.getTracks().forEach(t => t.stop());
+    this.stream = this.src = this.proc = this.analyser = this.sink = null;
+    cancelAnimationFrame(this.raf);
+    Tree.setPreview(null);
+    this.status(reason || 'MIC OFF');
+    this.syncButton();
+    const led = $('#rxLed'); if (led) led.classList.remove('tone');
+  },
+
+  /** Raw samples → fixed-size blocks. */
+  process(x) {
+    if (!this.active) return;
+    for (let i = 0; i < x.length; i++) {
+      this.buf[this.bufPos++] = x[i];
+      if (this.bufPos === this.N) { this.clock += this.N; this.block(); this.bufPos = 0; }
+    }
+    if (++this.procCalls % 4 === 0 && settings.listenAuto) this.autoTune();
+  },
+
+  block() {
+    const N = this.N, x = this.buf, w = this.win, c = this.coeff;
+    let s1 = 0, s2 = 0, ms = 0;
+    for (let i = 0; i < N; i++) {
+      const v = x[i];
+      ms += v * v;
+      const s0 = v * w[i] + c * s1 - s2; s2 = s1; s1 = s0;
+    }
+    ms /= N;
+    const power = s1 * s1 + s2 * s2 - c * s1 * s2;
+    const amp = 2 * Math.sqrt(Math.max(power, 0)) / (N * 0.5);   // Hann coherent gain 0.5
+    const toneMs = amp * amp / 2;
+    const level = 10 * Math.log10(toneMs + 1e-12);
+    const ratio = ms > 1e-12 ? Math.min(1, toneMs / ms) : 0;
+    const t = this.clock / this.fs * 1000;             // ms at end of this block
+    const blockMs = N / this.fs * 1000;
+
+    // Adaptive noise floor (only while silent) and signal peak (only while on).
+    if (this.floorDb == null) { this.floorDb = level; this.peakDb = level + 25; }
+    if (!this.on) {
+      this.floorDb += (level - this.floorDb) * (level < this.floorDb ? 0.3 : 0.02);
+      if (this.peakDb < this.floorDb + 15) this.peakDb = this.floorDb + 15;
+    } else {
+      this.peakDb += (level - this.peakDb) * (level > this.peakDb ? 0.5 : 0.05);
+    }
+    const thr = this.floorDb + Math.max(settings.listenSnr, (this.peakDb - this.floorDb) * 0.45);
+    this.levelDb = level; this.thrDb = thr; this.ratio = ratio;
+
+    // Hysteresis + 2-block debounce.
+    if (!this.on) {
+      if (level > thr && ratio > 0.2) {
+        if (++this.onCount === 1) this.streakStart = t - blockMs;
+        if (this.onCount >= 2) { this.on = true; this.offCount = 0; this.markBegin(this.streakStart); }
+      } else this.onCount = 0;
+    } else {
+      if (level < thr - 3 || ratio < 0.08) {
+        if (++this.offCount === 1) this.offStart = t - blockMs;
+        if (this.offCount >= 2) { this.on = false; this.onCount = 0; this.markEnd(this.offStart); }
+      } else this.offCount = 0;
+    }
+
+    if (this.on) {
+      // Live preview of where this mark will land in the tree.
+      const p = Input.seq + ((t - this.markStart) >= this.dashThr ? '-' : '.');
+      if (p !== this.lastPreview) { this.lastPreview = p; Tree.setPreview(p); }
+    } else if (this.gapState !== 'idle') {
+      const silence = t - this.lastMarkEnd;
+      const { letter, word } = this.gapThresholds();
+      if (this.gapState === 'intra' && silence > letter) {
+        this.gapState = 'letter';
+        this.commitLetter();
+      }
+      if (this.gapState === 'letter' && silence > word) {
+        this.gapState = 'idle';
+        Modes.current.onWordSpace && Modes.current.onWordSpace('auto');
+      }
+    }
+
+    const k = this.hIdx = (this.hIdx + 1) % this.HIST;
+    this.hLevel[k] = level; this.hThr[k] = thr; this.hOn[k] = this.on ? 1 : 0;
+  },
+
+  markBegin(t) {
+    if ((this.gapState === 'intra' || this.gapState === 'letter') && this.lastMarkEnd) {
+      const gap = t - this.lastMarkEnd;
+      if (gap < 4000) { this.gaps.push(gap); if (this.gaps.length > 20) this.gaps.shift(); }
+    }
+    this.markStart = t;
+    Input.holdTimers();
+    const led = $('#rxLed'); if (led) led.classList.add('tone');
+  },
+
+  markEnd(t) {
+    const dur = t - this.markStart;
+    Tree.setPreview(null); this.lastPreview = null;
+    const led = $('#rxLed'); if (led) led.classList.remove('tone');
+    if (dur < 20) return;                                        // click / glitch
+    const sym = dur < this.dashThr ? '.' : '-';
+    this.marks.push(dur); if (this.marks.length > 16) this.marks.shift();
+    this.adapt(sym, dur);
+    this.lastMarkEnd = t;
+    this.gapState = 'intra';
+    this.pending.push(dur);
+    Input.addSymbol(sym, 'mic', { external: true });
+    if (Input.seq.length >= 6) { this.commitLetter(); this.gapState = 'letter'; }
+    this.updateMeta();
+  },
+
+  /** Learn the sender's speed: split recent marks into short/long clusters. */
+  adapt(sym, dur) {
+    const m = this.marks;
+    let best = null;
+    if (m.length >= 3) {
+      const s = [...m].sort((a, b) => a - b), L = s.map(Math.log);
+      for (let k = 1; k < s.length; k++) {
+        const a = s.slice(0, k), b = s.slice(k);
+        const ma = avg(a), mb = avg(b);
+        if (mb / ma < 1.8) continue;
+        const la = L.slice(0, k), lb = L.slice(k), mla = avg(la), mlb = avg(lb);
+        const cost = la.reduce((q, v) => q + (v - mla) ** 2, 0) + lb.reduce((q, v) => q + (v - mlb) ** 2, 0);
+        if (!best || cost < best.cost) best = { cost, ma, mb };
+      }
+    }
+    if (best) {
+      this.unit = (best.ma + best.mb / 3) / 2;
+      this.dashThr = clamp((best.ma + best.mb) / 2, best.ma * 1.35, best.mb * 0.85);
+    } else if (sym === '.') {
+      this.unit += (dur - this.unit) * (m.length <= 2 ? 0.8 : 0.4);
+      this.dashThr = this.unit * 2.2;
+    } else {
+      this.unit += (dur / 3 - this.unit) * (m.length <= 2 ? 0.8 : 0.4);
+      this.dashThr = Math.min(this.dashThr, dur * 0.66);
+    }
+    this.unit = clamp(this.unit, 25, 500);
+    this.dashThr = clamp(this.dashThr, 50, 1500);
+  },
+
+  /** Split values into short/long clusters (log scale). Returns {ma, mb} or null if not bimodal. */
+  twoMeans(vals, minRatio) {
+    if (vals.length < 3) return null;
+    const s = [...vals].sort((a, b) => a - b), L = s.map(Math.log);
+    let best = null;
+    for (let k = 1; k < s.length; k++) {
+      const ma = avg(s.slice(0, k)), mb = avg(s.slice(k));
+      if (mb / ma < minRatio) continue;
+      const la = L.slice(0, k), lb = L.slice(k), mla = avg(la), mlb = avg(lb);
+      const cost = la.reduce((q, v) => q + (v - mla) ** 2, 0) + lb.reduce((q, v) => q + (v - mlb) ** 2, 0);
+      if (!best || cost < best.cost) best = { cost, ma, mb };
+    }
+    return best;
+  },
+
+  /** Letter / word gap thresholds learned from the sender's actual pauses. */
+  gapThresholds() {
+    const mult = GAP_MULT[settings.listenGap] || 1;
+    const c = this.twoMeans(this.gaps, 2);
+    let letter, word;
+    if (c) {
+      letter = clamp(Math.sqrt(c.ma * c.mb), c.ma * 1.5, c.mb * 0.75);
+      word = Math.max(letter * 1.9, c.mb * 1.55, 5 * this.unit);
+    } else {
+      const g = median(this.gaps);
+      letter = Math.max(2.8 * this.unit, g ? g * 1.7 : 0);
+      word = Math.max(6 * this.unit, letter * 2.2);
+    }
+    return { letter: Math.max(90, letter * mult), word: word * mult };
+  },
+
+  /** Re-check the letter's marks against the latest speed estimate, then commit. */
+  commitLetter() {
+    if (this.pending.length && this.pending.length === Input.seq.length) {
+      const seq = this.pending.map(d => d < this.dashThr ? '.' : '-').join('');
+      if (seq !== Input.seq) { Input.seq = seq; Tree.setPath(seq); UI.updateSeq(); }
+    }
+    this.pending = [];
+    if (Input.seq) Input.commit('mic');
+  },
+
+  /** Find the dominant steady tone between 300 and 1500 Hz and retune to it. */
+  autoTune() {
+    if (!this.analyser) return;
+    const d = this.fftData; this.analyser.getFloatFrequencyData(d);
+    const hz = this.fs / this.analyser.fftSize;
+    const lo = Math.floor(300 / hz), hi = Math.ceil(1500 / hz);
+    let mx = -Infinity, mi = lo; const band = [];
+    for (let i = lo; i <= hi; i++) { band.push(d[i]); if (d[i] > mx) { mx = d[i]; mi = i; } }
+    const prom = mx - median(band);
+    if (!(prom > 25) || mx < -85) { this.tuneStable = 0; return; }
+    const a = d[mi - 1], b = d[mi], c = d[mi + 1];
+    const off = (a - c) / (2 * (a - 2 * b + c)) || 0;
+    const f = (mi + clamp(off, -0.5, 0.5)) * hz;
+    if (Math.abs(f - this.tuneCand) < 25) this.tuneStable++; else { this.tuneStable = 0; this.tuneCand = f; }
+    if (this.tuneStable >= 2 && Math.abs(f - this.f0) > 30) { this.setFreq(f); this.tuneStable = 0; }
+  },
+
+  /* ----- UI ----- */
+  status(text, kind) {
+    const s = $('#rxStatus'); if (!s) return;
+    s.textContent = text; s.className = 'lab' + (kind ? ' ' + kind : '');
+    const led = $('#rxLed'); if (led) led.classList.toggle('live', kind === 'on');
+  },
+  syncButton() {
+    const b = $('#rxBtn'); if (!b) return;
+    b.innerHTML = this.active ? `${ICON.stop}STOP LISTENING` : `${ICON.mic}START LISTENING`;
+    b.classList.toggle('primary', !this.active);
+  },
+  updateMeta() {
+    const f = $('#rxFreq'); if (!f) return;
+    f.textContent = Math.round(this.f0) + ' Hz';
+    $('#rxWpm').textContent = this.marks && this.marks.length ? Math.round(1200 / this.unit) + ' WPM' : '— WPM';
+  },
+  drawLoop() {
+    const cv = $('#rxCanvas'); if (!cv) return;
+    const g = cv.getContext('2d');
+    const draw = () => {
+      if (!this.active) return;
+      const dpr = window.devicePixelRatio || 1, W = cv.clientWidth, H = cv.clientHeight;
+      if (cv.width !== Math.round(W * dpr) || cv.height !== Math.round(H * dpr)) { cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); }
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      g.clearRect(0, 0, W, H);
+      const lo = (this.floorDb ?? -100) - 8, hi = Math.max((this.peakDb ?? -40) + 6, lo + 30);
+      const y = v => H - clamp((v - lo) / (hi - lo), 0, 1) * (H - 4) - 2;
+      const n = this.HIST, dx = W / (n - 1);
+      // tone-on bands
+      g.fillStyle = 'rgba(56,232,255,.12)';
+      for (let i = 0; i < n; i++) { const k = (this.hIdx + 1 + i) % n; if (this.hOn[k]) g.fillRect(i * dx, 0, dx + 0.6, H); }
+      // threshold
+      g.strokeStyle = 'rgba(255,179,64,.75)'; g.setLineDash([4, 4]); g.lineWidth = 1;
+      g.beginPath(); for (let i = 0; i < n; i++) { const k = (this.hIdx + 1 + i) % n; const yy = y(this.hThr[k]); i ? g.lineTo(i * dx, yy) : g.moveTo(0, yy); } g.stroke();
+      g.setLineDash([]);
+      // level trace
+      g.strokeStyle = '#38e8ff'; g.lineWidth = 1.6; g.shadowColor = '#38e8ff'; g.shadowBlur = 6;
+      g.beginPath(); for (let i = 0; i < n; i++) { const k = (this.hIdx + 1 + i) % n; const yy = y(this.hLevel[k]); i ? g.lineTo(i * dx, yy) : g.moveTo(0, yy); } g.stroke();
+      g.shadowBlur = 0;
+      const snr = $('#rxSnr'); if (snr && this.floorDb != null) snr.textContent = Math.max(0, Math.round(this.levelDb - this.floorDb)) + ' dB';
+      this.raf = requestAnimationFrame(draw);
+    };
+    cancelAnimationFrame(this.raf);
+    this.raf = requestAnimationFrame(draw);
+  },
+  bindUI() {
+    $('#rxBtn').onclick = () => this.active ? this.stop() : this.start();
+    const auto = $('#rxAuto');
+    const syncAuto = () => auto.classList.toggle('sel', !!settings.listenAuto);
+    auto.onclick = () => { settings.listenAuto = !settings.listenAuto; saveSettings(); syncAuto(); if (!settings.listenAuto && this.active) this.setFreq(settings.toneHz); UI.toast(settings.listenAuto ? 'Auto pitch on' : `Pitch fixed at ${settings.toneHz} Hz`); };
+    syncAuto();
+    const syncGap = () => $$('#rxGap .chip').forEach(c => c.classList.toggle('sel', c.dataset.g === settings.listenGap));
+    $$('#rxGap .chip').forEach(c => c.onclick = () => { settings.listenGap = c.dataset.g; saveSettings(); syncGap(); });
+    syncGap();
+    this.syncButton(); this.updateMeta();
+    if (!this.active) this.status('MIC OFF');
+  }
+};
+
+const Listen = makeMessageMode('listen', 'LISTEN', {
+  big: true, noPlay: true, title: 'RECEIVED',
+  placeholder: 'Tap START LISTENING, then send Morse from another phone held nearby. Letters appear here live.'
+});
+Object.assign(Listen, {
+  autoSpace: false, noKey: true,
+  baseEnter: Listen.enter, baseLetter: Listen.onLetter,
+  enter(el) { this.baseEnter(el); Listener.bindUI(); },
+  exit() { Listener.stop(); },
+  onLetter(seq, ch) {
+    if (!ch) { this.message += '*'; this.save(); this.render(); return false; }   // * = unreadable letter
+    return this.baseLetter(seq, ch);
+  }
+});
+
 /* ----- Mode registry ----- */
 const Modes = {
-  list: { explore: Explore, learn: Learn, speed: Speed, decode: Decode, practice: Practice, challenge: Challenge },
-  order: ['explore', 'learn', 'speed', 'decode', 'practice', 'challenge'],
+  list: { explore: Explore, learn: Learn, speed: Speed, decode: Decode, listen: Listen, practice: Practice, challenge: Challenge },
+  order: ['explore', 'learn', 'speed', 'decode', 'listen', 'practice', 'challenge'],
   current: null,
   set(id) {
     if (!this.list[id]) id = 'explore';
@@ -2107,11 +2502,16 @@ function openSettings() {
       ${switchField('haptics', 'Haptics', Haptics.hasVibrate ? 'Dot = short buzz, dash = long buzz, patterns for right/wrong.' : 'iPhone Safari offers limited haptics (single ticks on iOS 18+).')}
       ${rangeField('wpm', 'Playback speed (hints)', 5, 30, 1, ' wpm')}
     </div>
+    <div class="group"><h3>LISTEN MODE</h3>
+      ${rangeField('listenSnr', 'Listen sensitivity threshold', 4, 24, 1, ' dB', 'Lower = picks up quieter tones (but more false beeps in noisy rooms). Higher = ignores more background noise.')}
+      ${switchField('listenAuto', 'Auto-detect sender pitch', `When off, listens only at the Tone pitch above (${settings.toneHz} Hz).`)}
+    </div>
     <div class="group"><h3>HOW TO USE</h3>
       <div class="field help">
         <b>Tap</b> the pad for a dot, <b>hold</b> it for a dash. Pause and the letter is decoded. Watch your route light up through the tree: dots branch <b>left</b>, dashes branch <b>right</b>.<br><br>
         <b>Keyboard:</b> <kbd>Space</kbd> is the key, <kbd>.</kbd> / <kbd>-</kbd> add symbols, <kbd>Enter</kbd> commits, <kbd>/</kbd> word space, <kbd>⌫</kbd> backspace, <kbd>Esc</kbd> clears.<br><br>
         <b>Hold CLR</b> to wipe the whole message.<br><br>
+        <b>Listen:</b> set the other phone's volume up, hold it a few inches from this phone's microphone, and send. Works best in a quiet room.<br><br>
         <b>Install:</b> iPhone — Share → <i>Add to Home Screen</i>. Android — menu → <i>Install app</i>.
       </div>
     </div>
@@ -2227,6 +2627,7 @@ function isTyping(t) { return t && (t.tagName === 'INPUT' || t.tagName === 'TEXT
 function flashKey(id) { const k = $(id); k.classList.add('hit'); setTimeout(() => k.classList.remove('hit'), 90); }
 
 function addButtonSymbol(sym) {
+  if (Modes.current && Modes.current.noKey) return;
   Sound.symbol(sym); Haptics.symbol(sym); UI.showInterp(sym);
   Input.addSymbol(sym, 'button');
 }
@@ -2292,7 +2693,7 @@ function boot() {
   document.addEventListener('dblclick', e => e.preventDefault());
 
   // Never leave a tone stuck on if the app is backgrounded mid-press.
-  document.addEventListener('visibilitychange', () => { if (document.hidden) { Keyer.cancel(); Transmitter.stop(); Sound.toneOff(); } });
+  document.addEventListener('visibilitychange', () => { if (document.hidden) { Keyer.cancel(); Transmitter.stop(); Sound.toneOff(); if (Listener.active) Listener.stop('PAUSED — TAP START'); } });
   window.addEventListener('blur', () => { Keyer.cancel(); Sound.toneOff(); });
 
   applySettings();
@@ -2331,6 +2732,7 @@ function boot() {
 boot();
 
 // Expose internals for debugging / future extensions (e.g. window.MorseApp.Bus.on('letter', ...)).
+window.ListenerDbg = Listener;
 window.MorseApp = { MORSE, decode, Bus, Input, Keyer, Tree, Modes, Transmitter, Sound, Haptics, settings };
 </script>
 </body>
