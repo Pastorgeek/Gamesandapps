@@ -1,0 +1,2337 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#04060a">
+<meta name="color-scheme" content="dark">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Morse">
+<meta name="format-detection" content="telephone=no">
+<meta name="description" content="Interactive Morse code trainer: tap and hold to travel the Morse tree.">
+<title>Morse Trainer</title>
+<!-- Optional companions (app works without them): manifest + service worker for offline / install. -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%2306121a'/%3E%3Ccircle cx='20' cy='32' r='7' fill='%2338e8ff'/%3E%3Crect x='32' y='27' width='22' height='10' rx='5' fill='%2338e8ff'/%3E%3C/svg%3E">
+<link rel="apple-touch-icon" id="appleIcon" href="icon-180.png">
+
+<style>
+/* =====================================================================
+   DESIGN TOKENS
+   ===================================================================== */
+:root{
+  --bg:#030508;
+  --body:#090e14;
+  --panel:#0b1218;
+  --panel-hi:#101a22;
+  --edge:#18252f;
+  --edge-hi:#22343f;
+  --trace:#17303a;
+  --text:#dce9f0;
+  --muted:#7a93a2;
+  --faint:#415966;
+  --on:#38e8ff;
+  --on-hi:#cdfbff;
+  --on-soft:rgba(56,232,255,.14);
+  --amber:#ffb340;
+  --ok:#36f5a2;
+  --bad:#ff4d6d;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+}
+
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+html{background:var(--bg)}
+body{
+  background:
+    radial-gradient(120% 60% at 50% -10%, #0f1e29 0%, rgba(15,30,41,0) 60%),
+    radial-gradient(80% 50% at 50% 110%, #0a1620 0%, rgba(10,22,32,0) 70%),
+    var(--bg);
+  color:var(--text);
+  font-family:var(--sans);
+  overflow:hidden;
+  overscroll-behavior:none;
+  -webkit-user-select:none; user-select:none;
+  -webkit-touch-callout:none;
+  -webkit-tap-highlight-color:transparent;
+  touch-action:manipulation;
+  -webkit-text-size-adjust:100%;
+}
+input,textarea{-webkit-user-select:text;user-select:text;font-family:inherit}
+button{font-family:inherit;color:inherit;cursor:pointer;-webkit-tap-highlight-color:transparent}
+button:focus{outline:none}
+button:focus-visible{outline:2px solid var(--on);outline-offset:2px}
+
+/* =====================================================================
+   APP SHELL — fixed to the viewport, never scrolls while practicing
+   ===================================================================== */
+#app{
+  height:100vh; height:100dvh;
+  max-width:520px; margin:0 auto;
+  display:flex; flex-direction:column; gap:8px;
+  padding: calc(var(--sat) + 8px) calc(var(--sar) + 12px) calc(var(--sab) + 10px) calc(var(--sal) + 12px);
+  position:relative;
+}
+
+/* ---------- Top bar ---------- */
+.top{display:flex;align-items:center;justify-content:space-between;gap:10px;flex:none;height:44px}
+.brand{display:flex;align-items:center;gap:10px;min-width:0}
+.mark{width:36px;height:36px;flex:none;border-radius:10px;
+  background:linear-gradient(160deg,#122330,#081017);border:1px solid var(--edge-hi);
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.06),0 0 18px rgba(56,232,255,.12);display:grid;place-items:center}
+.title{font-weight:800;font-size:14px;letter-spacing:.24em;line-height:1;white-space:nowrap}
+.modechip{margin-top:5px;display:flex;align-items:center;gap:6px;font:600 10px/1 var(--mono);letter-spacing:.14em;color:var(--muted)}
+.led{width:6px;height:6px;border-radius:50%;background:var(--on);box-shadow:0 0 8px var(--on);display:inline-block;animation:breathe 2.4s ease-in-out infinite}
+.top-actions{display:flex;gap:6px}
+.ib{width:40px;height:40px;border-radius:12px;border:1px solid var(--edge);background:linear-gradient(180deg,#111b23,#0a1117);
+  display:grid;place-items:center;box-shadow:0 2px 0 #04070a, inset 0 1px 0 rgba(255,255,255,.05);padding:0;transition:transform .08s, border-color .2s}
+.ib:active{transform:translateY(1px)}
+.ib svg{width:20px;height:20px;stroke:var(--muted);fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.ib.lit svg{stroke:var(--on)}
+.ib.off svg{stroke:var(--faint)}
+
+/* ---------- Mode tabs ---------- */
+.tabs{display:flex;gap:6px;flex:none;overflow-x:auto;scrollbar-width:none;-ms-overflow-style:none;scroll-snap-type:x proximity;margin:0 -12px;padding:0 12px}
+.tabs::-webkit-scrollbar{display:none}
+.tab{flex:1 0 auto;scroll-snap-align:center;height:34px;padding:0 12px;border-radius:10px;border:1px solid var(--edge);
+  background:var(--panel);font:700 10.5px/1 var(--sans);letter-spacing:.14em;color:var(--muted);position:relative;transition:all .2s}
+.tab.active{color:var(--on-hi);border-color:rgba(56,232,255,.45);background:linear-gradient(180deg,rgba(56,232,255,.16),rgba(56,232,255,.05));
+  box-shadow:0 0 16px rgba(56,232,255,.15), inset 0 0 12px rgba(56,232,255,.08)}
+.tab.active::after{content:"";position:absolute;left:50%;bottom:3px;width:14px;height:2px;margin-left:-7px;border-radius:2px;background:var(--on);box-shadow:0 0 6px var(--on)}
+
+/* ---------- Tree panel ---------- */
+.treebox{flex:1 1 0;min-height:110px;position:relative;border-radius:18px;border:1px solid var(--edge);
+  background:linear-gradient(180deg,#0a1218,#071016);overflow:hidden;
+  box-shadow:inset 0 0 40px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.04)}
+.treebox svg{position:absolute;inset:4px 4px 2px;width:calc(100% - 8px);height:calc(100% - 6px);display:block}
+.legend{position:absolute;top:8px;font:700 9px/1 var(--mono);letter-spacing:.14em;color:var(--faint);pointer-events:none;transition:opacity .3s}
+.legend.l{left:12px}.legend.r{right:12px}
+.legend b{color:var(--on);font-weight:700}
+body.adv .legend{opacity:0}
+
+/* ---------- Readout (LCD) ---------- */
+.readout{flex:none;height:62px;display:flex;gap:8px;position:relative}
+.lcd{border-radius:14px;border:1px solid var(--edge);background:
+  repeating-linear-gradient(0deg, rgba(255,255,255,.018) 0 1px, transparent 1px 3px), linear-gradient(180deg,#061016,#050c11);
+  box-shadow:inset 0 2px 10px rgba(0,0,0,.7);position:relative;overflow:hidden}
+.seqlcd{flex:1;display:flex;align-items:center;padding:0 14px;min-width:0}
+.seq{font:700 30px/1 var(--mono);letter-spacing:.06em;color:var(--on-hi);text-shadow:0 0 12px rgba(56,232,255,.65);white-space:nowrap;display:flex;gap:10px;align-items:center}
+.seq .s{display:inline-block;animation:symin .22s cubic-bezier(.2,1.4,.4,1)}
+.seq .ph{font:600 11px/1.3 var(--mono);letter-spacing:.14em;color:var(--faint);text-shadow:none}
+.seq.bad{color:var(--bad);text-shadow:0 0 12px rgba(255,77,109,.6)}
+.seq.ok{color:var(--ok);text-shadow:0 0 12px rgba(54,245,162,.6)}
+.lcdtag{position:absolute;top:6px;left:12px;font:600 8.5px/1 var(--mono);letter-spacing:.18em;color:var(--faint)}
+.letlcd{width:66px;flex:none;display:grid;place-items:center;padding-top:12px}
+.letter{font:800 38px/1 var(--sans);color:var(--on-hi);text-shadow:0 0 16px rgba(56,232,255,.7);transition:color .15s}
+.letter.dim{color:var(--faint);text-shadow:none}
+.letter.bad{color:var(--bad);text-shadow:0 0 14px rgba(255,77,109,.7)}
+.letter.ok{color:var(--ok);text-shadow:0 0 14px rgba(54,245,162,.7)}
+.pausebar{position:absolute;left:10px;right:10px;bottom:5px;height:2px;border-radius:2px;background:rgba(56,232,255,.08);overflow:hidden}
+.pausebar i{display:block;height:100%;width:0;background:var(--on);box-shadow:0 0 6px var(--on);transform-origin:left}
+
+/* ---------- Mode screen panel ---------- */
+.screen{flex:none;border-radius:16px;border:1px solid var(--edge);background:linear-gradient(180deg,var(--panel-hi),var(--panel));
+  padding:10px 12px;min-height:86px;position:relative;box-shadow:inset 0 1px 0 rgba(255,255,255,.04)}
+.screen.fx-ok{animation:okglow .6s ease-out}
+.screen.fx-bad{animation:shake .32s ease-in-out, badglow .5s ease-out}
+.lab{font:700 9.5px/1 var(--mono);letter-spacing:.18em;color:var(--muted)}
+.row{display:flex;align-items:center;gap:8px}
+.between{justify-content:space-between}
+.grow{flex:1;min-width:0}
+.mini{height:30px;padding:0 11px;border-radius:9px;border:1px solid var(--edge-hi);background:#0d171e;font:700 10px/1 var(--sans);letter-spacing:.12em;color:var(--text);
+  display:inline-flex;align-items:center;gap:6px;white-space:nowrap;transition:transform .08s}
+.mini:active{transform:translateY(1px)}
+.mini svg{width:14px;height:14px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.mini.primary{background:linear-gradient(180deg,#1bc6dc,#0f8fa1);border-color:#5ff0ff;color:#021317;box-shadow:0 0 16px rgba(56,232,255,.3)}
+.mini.amber{border-color:rgba(255,179,64,.5);color:var(--amber)}
+.mini.ghost{background:transparent}
+.chips{display:flex;gap:5px}
+.chip{height:26px;padding:0 9px;border-radius:8px;border:1px solid var(--edge);background:transparent;font:700 9.5px/1 var(--sans);letter-spacing:.1em;color:var(--muted)}
+.chip.sel{border-color:rgba(56,232,255,.5);color:var(--on-hi);background:var(--on-soft)}
+
+/* message display (Explore/Decode) */
+.msg{font:600 22px/1.3 var(--mono);letter-spacing:.06em;color:var(--text);white-space:pre-wrap;word-break:break-word;
+  height:58px;overflow-y:auto;margin-top:6px;scrollbar-width:none}
+.msg::-webkit-scrollbar{display:none}
+.msg .empty{font:500 13px/1.4 var(--sans);letter-spacing:.02em;color:var(--faint)}
+.caret{display:inline-block;width:10px;height:22px;vertical-align:-4px;margin-left:2px;background:var(--on);box-shadow:0 0 8px var(--on);animation:blink 1s steps(1) infinite}
+.msg .fresh{color:var(--on-hi);text-shadow:0 0 10px rgba(56,232,255,.8)}
+.transcript{font:500 12px/1.4 var(--mono);color:var(--muted);white-space:nowrap;overflow-x:auto;scrollbar-width:none;margin-top:4px;height:18px}
+.transcript::-webkit-scrollbar{display:none}
+body[data-mode="decode"] .msg{height:108px;font-size:24px}
+body[data-mode="decode"] .treebox{flex-grow:.8}
+
+/* prompt display (Learn/Speed/Practice/Challenge) */
+.prompt{display:flex;align-items:center;gap:12px}
+.tgt{width:64px;height:64px;flex:none;border-radius:14px;display:grid;place-items:center;border:1px solid rgba(255,179,64,.45);
+  background:radial-gradient(circle at 50% 40%,rgba(255,179,64,.18),rgba(255,179,64,.03));box-shadow:0 0 22px rgba(255,179,64,.12), inset 0 0 16px rgba(255,179,64,.08);
+  font:800 40px/1 var(--sans);color:var(--amber);text-shadow:0 0 14px rgba(255,179,64,.6)}
+.tgt.enter{animation:tgtin .35s cubic-bezier(.2,1.3,.4,1)}
+.tgt.ok{border-color:var(--ok);color:var(--ok);text-shadow:0 0 14px rgba(54,245,162,.8)}
+.tgt.small{font-size:30px}
+.hint{font:700 20px/1.2 var(--mono);color:var(--on-hi);letter-spacing:.08em;min-height:24px}
+.hint.hidden{color:var(--faint);font:600 11px/1.6 var(--mono);letter-spacing:.14em}
+.fb{font:600 12px/1.35 var(--sans);color:var(--muted);min-height:16px;margin-top:4px}
+.fb.ok{color:var(--ok)}.fb.bad{color:var(--bad)}
+.stats{display:flex;gap:6px}
+.stat{min-width:48px;padding:6px 4px;border-radius:10px;background:#081117;border:1px solid var(--edge);text-align:center}
+.stat b{display:block;font:800 18px/1 var(--mono);color:var(--text)}
+.stat span{display:block;margin-top:4px;font:700 7.5px/1 var(--mono);letter-spacing:.14em;color:var(--faint)}
+.stat.hot b{color:var(--amber);text-shadow:0 0 10px rgba(255,179,64,.5)}
+.statgrid{display:grid;grid-template-columns:repeat(6,1fr);gap:5px;margin-top:8px}
+.statgrid .stat{min-width:0}
+.statgrid .stat b{font-size:14px}
+.timer{height:4px;border-radius:3px;background:#0a1a20;overflow:hidden;margin-top:8px}
+.timer i{display:block;height:100%;background:linear-gradient(90deg,var(--on),#8ff7ff);box-shadow:0 0 8px var(--on);width:100%}
+.timer.low i{background:linear-gradient(90deg,var(--bad),#ff8aa0);box-shadow:0 0 8px var(--bad)}
+.big-num{font:800 34px/1 var(--mono);color:var(--on-hi);text-shadow:0 0 14px rgba(56,232,255,.6)}
+
+/* phrase cells (Practice/Challenge) */
+.phrase{display:flex;flex-wrap:nowrap;gap:3px;overflow-x:auto;scrollbar-width:none;margin-top:8px;padding-bottom:2px}
+.phrase::-webkit-scrollbar{display:none}
+.pc{flex:none;min-width:20px;height:26px;padding:0 3px;border-radius:6px;display:grid;place-items:center;font:700 15px/1 var(--mono);
+  color:var(--faint);background:#081016;border:1px solid var(--edge)}
+.pc.sp{min-width:10px;background:transparent;border-color:transparent}
+.pc.done{color:var(--ok);border-color:rgba(54,245,162,.35);background:rgba(54,245,162,.06)}
+.pc.cur{color:#1a1203;background:var(--amber);border-color:var(--amber);box-shadow:0 0 12px rgba(255,179,64,.5)}
+.pc.skip{opacity:.4}
+.pc.hid{color:var(--faint)}
+.reward{margin-top:8px;padding:10px 12px;border-radius:12px;border:1px dashed rgba(255,179,64,.5);background:rgba(255,179,64,.06);color:var(--amber);font:600 15px/1.35 var(--sans);white-space:pre-wrap}
+.ansinput{width:64px;height:48px;border-radius:12px;border:1px solid rgba(56,232,255,.5);background:#061016;color:var(--on-hi);text-align:center;font:800 28px/1 var(--mono);text-transform:uppercase;outline:none;box-shadow:inset 0 0 12px rgba(56,232,255,.12)}
+.ansinput:focus{border-color:var(--on);box-shadow:0 0 16px rgba(56,232,255,.3)}
+.txt{width:100%;height:40px;border-radius:10px;border:1px solid var(--edge-hi);background:#060d12;color:var(--text);padding:0 12px;font:600 15px/1 var(--mono);letter-spacing:.06em;outline:none;text-transform:uppercase}
+.txt:focus{border-color:rgba(56,232,255,.6);box-shadow:0 0 0 3px rgba(56,232,255,.12)}
+textarea.txt{height:70px;padding:10px 12px;line-height:1.35;resize:none;text-transform:none;font-family:var(--sans)}
+.center{text-align:center}
+.done-title{font:800 13px/1 var(--sans);letter-spacing:.24em;color:var(--ok);text-shadow:0 0 12px rgba(54,245,162,.6)}
+
+/* ---------- PRESS & HOLD pad ---------- */
+.pad{flex:none;height:clamp(104px,19dvh,180px);border-radius:24px;position:relative;touch-action:none;padding-bottom:16px;
+  border:1px solid #23333f;
+  background:
+    radial-gradient(circle at 1px 1px, rgba(255,255,255,.035) 1px, transparent 1.6px) 0 0/9px 9px,
+    linear-gradient(180deg,#15202a 0%,#0d151c 55%,#0a1117 100%);
+  box-shadow:0 6px 0 #04070a, 0 14px 30px rgba(0,0,0,.6), inset 0 1px 0 rgba(255,255,255,.07), inset 0 -10px 30px rgba(0,0,0,.35);
+  transition:transform .07s ease-out, box-shadow .07s ease-out, border-color .15s;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:8px;
+  cursor:pointer}
+.pad.down{transform:translateY(5px);border-color:rgba(56,232,255,.55);
+  box-shadow:0 1px 0 #04070a, 0 6px 14px rgba(0,0,0,.5), inset 0 0 50px rgba(56,232,255,.18), inset 0 2px 8px rgba(0,0,0,.6)}
+.pad.tx{border-color:rgba(255,179,64,.5);box-shadow:0 6px 0 #04070a, inset 0 0 40px rgba(255,179,64,.15)}
+.core{width:62px;height:62px;border-radius:50%;position:relative;display:grid;place-items:center;
+  background:radial-gradient(circle at 50% 35%,#1d2c37,#0b1319 70%);border:1px solid #2b3d4a;
+  box-shadow:inset 0 2px 6px rgba(255,255,255,.05), 0 0 0 6px rgba(56,232,255,.04);transition:all .12s}
+.core::before{content:"";position:absolute;inset:-9px;border-radius:50%;border:1px solid rgba(56,232,255,.18)}
+.core b{font:800 26px/1 var(--mono);color:var(--faint);transition:color .1s}
+.pad.down .core{background:radial-gradient(circle at 50% 40%,#3cecff,#0e8da0 75%);border-color:#bff8ff;box-shadow:0 0 30px rgba(56,232,255,.6), 0 0 0 6px rgba(56,232,255,.12)}
+.pad.down .core b{color:#022027}
+.pad.down .core::before{animation:padring .9s ease-out infinite}
+.pad.tx .core{background:radial-gradient(circle at 50% 40%,#ffd08a,#b9771a 75%);border-color:#ffe2b0;box-shadow:0 0 30px rgba(255,179,64,.55)}
+.padlabel{font:800 12px/1 var(--sans);letter-spacing:.3em;color:var(--muted)}
+.padsub{font:600 9.5px/1 var(--mono);letter-spacing:.12em;color:var(--faint);margin-top:-2px}
+.pad.down .padlabel{color:var(--on-hi)}
+.ms{position:absolute;top:10px;right:14px;font:600 10px/1 var(--mono);letter-spacing:.08em;color:var(--faint)}
+.pad.down .ms{color:var(--on)}
+.interp{position:absolute;top:9px;left:14px;font:800 11px/1 var(--mono);letter-spacing:.16em;color:var(--on);opacity:0;text-shadow:0 0 8px rgba(56,232,255,.7)}
+.interp.show{animation:interp .75s ease-out forwards}
+.meter{position:absolute;left:16px;right:16px;bottom:11px;height:4px;border-radius:3px;background:#0a161c;overflow:visible}
+.meter i{position:absolute;left:0;top:0;bottom:0;width:0;border-radius:3px;background:var(--on);box-shadow:0 0 8px var(--on)}
+.meter i.dash{background:linear-gradient(90deg,var(--on),#e6fdff)}
+.meter em{position:absolute;left:50%;top:-4px;bottom:-4px;width:2px;margin-left:-1px;background:var(--faint);border-radius:1px}
+.meter span{position:absolute;top:-13px;font:700 8px/1 var(--mono);letter-spacing:.12em;color:var(--faint)}
+.meter span.a{left:0}.meter span.b{right:0}
+
+/* ---------- Key row ---------- */
+.keys{flex:none;display:grid;grid-template-columns:1fr 1fr 1.35fr 1fr 1fr;gap:8px}
+.key{height:50px;border-radius:14px;border:1px solid var(--edge-hi);background:linear-gradient(180deg,#15202a,#0c141a);
+  box-shadow:0 3px 0 #04070a, inset 0 1px 0 rgba(255,255,255,.06);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+  font:800 20px/1 var(--mono);color:var(--text);transition:transform .06s, box-shadow .06s;padding:0;touch-action:manipulation}
+.key small{font:700 8px/1 var(--sans);letter-spacing:.16em;color:var(--faint)}
+.key:active,.key.hit{transform:translateY(3px);box-shadow:0 0 0 #04070a, inset 0 0 18px rgba(56,232,255,.12)}
+.key svg{width:20px;height:20px;stroke:var(--text);fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.key.sym{color:var(--on-hi);text-shadow:0 0 8px rgba(56,232,255,.5)}
+
+/* ---------- Bottom sheet (settings, setup, calibration) ---------- */
+.sheet{position:fixed;inset:0;z-index:50;pointer-events:none}
+.sheet .backdrop{position:absolute;inset:0;background:rgba(0,0,0,.55);-webkit-backdrop-filter:blur(4px);backdrop-filter:blur(4px);opacity:0;transition:opacity .25s}
+.sheet .panel{position:absolute;left:0;right:0;bottom:0;margin:0 auto;max-width:520px;max-height:88dvh;max-height:88vh;display:flex;flex-direction:column;
+  border-radius:24px 24px 0 0;border:1px solid var(--edge-hi);border-bottom:none;background:linear-gradient(180deg,#101a22,#091016);
+  box-shadow:0 -20px 60px rgba(0,0,0,.6);transform:translateY(105%);transition:transform .32s cubic-bezier(.2,.85,.25,1)}
+.sheet.open{pointer-events:auto}
+.sheet.open .backdrop{opacity:1}
+.sheet.open .panel{transform:none}
+.grip{width:40px;height:4px;border-radius:2px;background:#2a3a46;margin:8px auto 2px}
+.sheethead{display:flex;align-items:center;justify-content:space-between;padding:6px 16px 10px}
+.sheethead h2{margin:0;font:800 13px/1 var(--sans);letter-spacing:.24em}
+.sheetbody{overflow-y:auto;-webkit-overflow-scrolling:touch;padding:0 16px calc(var(--sab) + 20px);overscroll-behavior:contain}
+.group{margin:6px 0 16px}
+.group h3{margin:0 0 8px;font:700 10px/1 var(--mono);letter-spacing:.2em;color:var(--on)}
+.field{padding:12px;border-radius:14px;background:#0a1218;border:1px solid var(--edge);margin-bottom:8px}
+.field .row{justify-content:space-between}
+.field label,.flabel{font:600 14px/1.2 var(--sans);color:var(--text)}
+.field .val{font:700 13px/1 var(--mono);color:var(--on-hi)}
+.field p{margin:6px 0 0;font:500 12px/1.4 var(--sans);color:var(--muted)}
+input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:28px;background:transparent;margin:8px 0 0}
+input[type=range]::-webkit-slider-runnable-track{height:6px;border-radius:3px;background:linear-gradient(90deg,var(--on) var(--p,50%),#18262f var(--p,50%))}
+input[type=range]::-moz-range-track{height:6px;border-radius:3px;background:#18262f}
+input[type=range]::-moz-range-progress{height:6px;border-radius:3px;background:var(--on)}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:24px;height:24px;border-radius:50%;margin-top:-9px;background:#e9fdff;border:3px solid var(--on);box-shadow:0 0 12px rgba(56,232,255,.6)}
+input[type=range]::-moz-range-thumb{width:20px;height:20px;border-radius:50%;background:#e9fdff;border:3px solid var(--on)}
+.sw{width:52px;height:30px;border-radius:15px;border:1px solid var(--edge-hi);background:#121d25;position:relative;flex:none;padding:0;transition:background .2s,border-color .2s}
+.sw::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;background:#5d7482;transition:transform .2s,background .2s}
+.sw[aria-checked=true]{background:rgba(56,232,255,.25);border-color:rgba(56,232,255,.6)}
+.sw[aria-checked=true]::after{transform:translateX(22px);background:var(--on);box-shadow:0 0 10px var(--on)}
+.seg{display:flex;padding:3px;border-radius:12px;background:#060d12;border:1px solid var(--edge);margin-top:8px}
+.seg button{flex:1;height:34px;border:0;border-radius:9px;background:transparent;font:700 11px/1 var(--sans);letter-spacing:.14em;color:var(--muted)}
+.seg button.sel{background:linear-gradient(180deg,rgba(56,232,255,.25),rgba(56,232,255,.1));color:var(--on-hi);box-shadow:inset 0 0 0 1px rgba(56,232,255,.45)}
+.btnwide{width:100%;height:46px;border-radius:13px;border:1px solid var(--edge-hi);background:linear-gradient(180deg,#15212a,#0d151b);font:800 12px/1 var(--sans);letter-spacing:.18em;color:var(--text);margin-top:8px}
+.btnwide.primary{background:linear-gradient(180deg,#1bc6dc,#0f8fa1);border-color:#5ff0ff;color:#021317}
+.btnwide.danger{color:var(--bad);border-color:rgba(255,77,109,.4)}
+.help{font:500 13px/1.5 var(--sans);color:var(--muted)}
+.help b{color:var(--text)}
+.help kbd{font:700 11px/1 var(--mono);padding:2px 6px;border-radius:5px;border:1px solid var(--edge-hi);color:var(--on-hi)}
+.saved{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:12px;background:#0a1218;border:1px solid var(--edge);margin-bottom:6px}
+.saved .grow b{display:block;font:700 13px/1.2 var(--sans)}
+.saved .grow span{font:500 11px/1.2 var(--mono);color:var(--muted)}
+
+/* calibration pad */
+.calpad{height:150px;margin-top:10px;width:100%}
+.pips{display:flex;gap:6px;justify-content:center;margin:12px 0 2px}
+.pips i{width:10px;height:10px;border-radius:50%;border:1px solid var(--edge-hi);background:#0a1218}
+.pips i.f{background:var(--on);border-color:var(--on);box-shadow:0 0 8px var(--on)}
+.pips i.f.h{background:var(--amber);border-color:var(--amber);box-shadow:0 0 8px var(--amber)}
+.calstep{font:800 16px/1.3 var(--sans);text-align:center;margin-top:6px}
+.calnote{font:500 12px/1.4 var(--sans);text-align:center;color:var(--muted);margin-top:4px}
+
+/* ---------- Toast ---------- */
+.toast{position:fixed;left:50%;top:calc(var(--sat) + 60px);transform:translate(-50%,-10px);z-index:60;padding:9px 14px;border-radius:12px;
+  background:rgba(12,22,29,.95);border:1px solid rgba(56,232,255,.4);color:var(--on-hi);font:700 12px/1.2 var(--sans);letter-spacing:.06em;
+  box-shadow:0 10px 30px rgba(0,0,0,.5),0 0 20px rgba(56,232,255,.15);opacity:0;pointer-events:none;transition:opacity .2s, transform .2s;max-width:86vw;text-align:center}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+
+/* =====================================================================
+   SVG TREE STYLES
+   ===================================================================== */
+.trace{fill:none;stroke:var(--trace);stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;transition:stroke .2s}
+.trace.pv{stroke:#2f6d7e;stroke-dasharray:3 3}
+.ttrace{fill:none;stroke:var(--amber);stroke-width:2;stroke-linecap:round;stroke-dasharray:2 5;opacity:0;transition:opacity .3s}
+.ttrace.on{opacity:.8;animation:march .9s linear infinite}
+.otrace{fill:none;stroke:var(--on);stroke-width:3;stroke-linecap:round;stroke-linejoin:round;opacity:0;
+  stroke-dasharray:var(--len) var(--len);stroke-dashoffset:var(--len);
+  transition:opacity .28s ease, stroke-dashoffset 0s linear .3s}
+.otrace.on{opacity:1;stroke-dashoffset:0;transition:stroke-dashoffset .24s cubic-bezier(.3,.7,.3,1), opacity .05s}
+.otrace.ok{stroke:var(--ok)} .otrace.bad{stroke:var(--bad)}
+.symtag{font:800 11px/1 var(--mono);fill:#3d6a7a;text-anchor:middle;transition:opacity .3s}
+body.adv .symtag{opacity:0}
+.node{transform-box:fill-box;transform-origin:center}
+.node .body{fill:#0a151c;stroke:#1d3946;stroke-width:1.5;transition:fill .2s, stroke .2s}
+.node .lbl{fill:#6d8d9e;font-family:var(--sans);font-weight:800;text-anchor:middle;transition:fill .2s, opacity .25s;pointer-events:none}
+.node.dg .lbl{fill:#557483}
+.node .ring{fill:none;stroke:var(--on);stroke-width:1.4;opacity:0;transform-box:fill-box;transform-origin:center}
+.node.empty .body{fill:#0b161d;stroke:#1d3a47}
+.node.on .body{fill:#0a2a34;stroke:var(--on)}
+.node.on .lbl{fill:var(--on-hi)}
+.node.nx .body{stroke:#2e6f80}
+.node.nx .lbl{fill:#9fc6d3}
+.node.pv .body{stroke:#7fe9f8;stroke-dasharray:3 2}
+.node.pv .lbl{fill:#bdf3fb;opacity:1}
+.node.target .body{stroke:var(--amber);fill:#251a06}
+.node.target .lbl{fill:var(--amber);opacity:1}
+.node.cur .body{fill:var(--on);stroke:#effeff}
+.node.cur .lbl{fill:#021a20;opacity:1}
+.node.cur .ring{animation:ring 1.5s ease-out infinite}
+.node.cur.empty .body{fill:var(--on)}
+.node.over .body{fill:var(--bad);stroke:#ffd0d9}
+.node.ok .body{fill:var(--ok)!important;stroke:#eafff5!important}
+.node.ok .lbl{fill:#022014!important}
+.node.bad .body{fill:var(--bad)!important;stroke:#ffe0e6!important}
+.node.bad .lbl{fill:#2a0008!important}
+.node.pop{animation:pop .32s cubic-bezier(.2,1.5,.4,1)}
+.node.commit{animation:commit .45s ease-out}
+.root .body{fill:#0d1d26;stroke:#2a5260}
+.root.on .body{fill:#0e3540;stroke:var(--on)}
+.root .core-dot{fill:#2a5260;transition:fill .2s}
+.root.on .core-dot{fill:var(--on)}
+.root.idle .ring{animation:ring 2.6s ease-out infinite;opacity:.4}
+.halo{fill:var(--on);opacity:0;transition:opacity .25s}
+.halo.on{opacity:.22}
+.halo.cur{opacity:.6}
+.halo.ok{fill:var(--ok);opacity:.7}.halo.bad{fill:var(--bad);opacity:.7}
+.halo.target{fill:var(--amber);opacity:.28}
+/* Advanced mode: hide labels of nodes you haven't reached */
+body.adv .node:not(.on):not(.cur):not(.target):not(.pv) .lbl{opacity:0}
+body.nonum .dgrp{display:none}
+
+/* =====================================================================
+   KEYFRAMES
+   ===================================================================== */
+@keyframes breathe{0%,100%{opacity:1}50%{opacity:.35}}
+@keyframes blink{50%{opacity:0}}
+@keyframes symin{from{transform:scale(1.8);opacity:0}to{transform:none;opacity:1}}
+@keyframes ring{0%{transform:scale(1);opacity:.85}100%{transform:scale(1.9);opacity:0}}
+@keyframes padring{0%{transform:scale(1);opacity:.8}100%{transform:scale(1.5);opacity:0}}
+@keyframes pop{0%{transform:scale(1)}40%{transform:scale(1.28)}100%{transform:scale(1)}}
+@keyframes commit{0%{transform:scale(1)}30%{transform:scale(1.35)}100%{transform:scale(1)}}
+@keyframes march{to{stroke-dashoffset:-14}}
+@keyframes interp{0%{opacity:0;transform:translateY(4px)}15%{opacity:1;transform:none}70%{opacity:1}100%{opacity:0}}
+@keyframes okglow{0%{box-shadow:0 0 0 rgba(54,245,162,0), inset 0 0 0 rgba(54,245,162,0);border-color:var(--ok)}30%{box-shadow:0 0 30px rgba(54,245,162,.35), inset 0 0 30px rgba(54,245,162,.15);border-color:var(--ok)}100%{box-shadow:0 0 0 rgba(54,245,162,0);}}
+@keyframes badglow{0%,40%{border-color:var(--bad);box-shadow:0 0 22px rgba(255,77,109,.3)}100%{}}
+@keyframes shake{0%,100%{transform:none}20%{transform:translateX(-6px)}45%{transform:translateX(5px)}70%{transform:translateX(-3px)}}
+@keyframes tgtin{from{transform:scale(.6) rotate(-6deg);opacity:0}to{transform:none;opacity:1}}
+
+/* =====================================================================
+   RESPONSIVE TWEAKS
+   ===================================================================== */
+@media (max-height:700px){
+  #app{gap:6px}
+  .top{height:38px}
+  .mark{width:32px;height:32px}
+  .tab{height:30px}
+  .readout{height:52px}
+  .seq{font-size:26px}
+  .letter{font-size:32px}
+  .letlcd{width:56px}
+  .screen{min-height:74px;padding:8px 10px}
+  .msg{height:48px;font-size:19px}
+  body[data-mode="decode"] .msg{height:76px}
+  .tgt{width:54px;height:54px;font-size:32px}
+  .keys .key{height:44px}
+  .pad{height:clamp(92px,17dvh,140px)}
+  .core{width:52px;height:52px}
+}
+@media (min-height:880px){
+  .pad{height:clamp(120px,19dvh,200px)}
+}
+@media (prefers-reduced-motion:reduce){
+  *{animation-duration:.01ms!important;animation-iteration-count:1!important}
+}
+</style>
+</head>
+<body data-mode="explore">
+
+<!-- Hidden switch used as an iOS 18+ haptic fallback (Safari has no navigator.vibrate). -->
+<input type="checkbox" id="iosHaptic" switch aria-hidden="true" tabindex="-1" style="position:fixed;left:-100px;top:-100px;opacity:0;pointer-events:none">
+<label for="iosHaptic" id="iosHapticLabel" aria-hidden="true" style="position:fixed;left:-100px;top:-100px;opacity:0;pointer-events:none"></label>
+
+<div id="app">
+  <!-- ===== Header ===== -->
+  <header class="top">
+    <div class="brand">
+      <div class="mark" aria-hidden="true">
+        <svg width="24" height="24" viewBox="0 0 24 24"><circle cx="6" cy="12" r="3.2" fill="#38e8ff"/><rect x="11" y="9.6" width="10" height="4.8" rx="2.4" fill="#38e8ff"/></svg>
+      </div>
+      <div style="min-width:0">
+        <div class="title">MORSE TRAINER</div>
+        <div class="modechip"><i class="led"></i><span id="modeName">EXPLORE MODE</span></div>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button class="ib" id="btnSound" aria-label="Toggle sound"></button>
+      <button class="ib" id="btnHaptic" aria-label="Toggle haptics"></button>
+      <button class="ib" id="btnSettings" aria-label="Settings">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ===== Mode tabs ===== -->
+  <nav class="tabs" id="tabs" role="tablist"></nav>
+
+  <!-- ===== Interactive Morse tree ===== -->
+  <section class="treebox" aria-label="Morse code tree">
+    <div class="legend l">← <b>•</b> DOT</div>
+    <div class="legend r">DASH <b>—</b> →</div>
+    <svg id="tree" viewBox="0 0 360 300" preserveAspectRatio="xMidYMid meet" aria-hidden="true"></svg>
+  </section>
+
+  <!-- ===== Live readout ===== -->
+  <section class="readout">
+    <div class="lcd seqlcd">
+      <span class="lcdtag">SEQUENCE</span>
+      <div class="seq" id="seq"></div>
+      <div class="pausebar"><i id="pauseFill"></i></div>
+    </div>
+    <div class="lcd letlcd"><span class="lcdtag">CHAR</span><div class="letter dim" id="letter"></div></div>
+  </section>
+
+  <!-- ===== Mode-specific screen ===== -->
+  <section class="screen" id="screen"></section>
+
+  <!-- ===== Press & hold pad ===== -->
+  <section class="pad" id="pad" role="button" aria-label="Morse key: tap for dot, hold for dash">
+    <span class="interp" id="interp">DOT •</span>
+    <span class="ms" id="ms">0 ms</span>
+    <div class="core"><b id="coreGlyph">•</b></div>
+    <div class="padlabel">PRESS &amp; HOLD</div>
+    <div class="padsub" id="padsub">TAP = • &nbsp;·&nbsp; HOLD = —</div>
+    <div class="meter"><i id="meterFill"></i><em></em></div>
+  </section>
+
+  <!-- ===== Key row ===== -->
+  <section class="keys">
+    <button class="key sym" id="kDot" aria-label="Dot">•<small>DOT</small></button>
+    <button class="key sym" id="kDash" aria-label="Dash">—<small>DASH</small></button>
+    <button class="key" id="kSpace" aria-label="Word space"><svg viewBox="0 0 24 24"><path d="M4 10v4h16v-4"/></svg><small>SPACE</small></button>
+    <button class="key" id="kBack" aria-label="Backspace"><svg viewBox="0 0 24 24"><path d="M21 5H9l-6 7 6 7h12z"/><path d="M17 9l-6 6M11 9l6 6"/></svg><small>BACK</small></button>
+    <button class="key" id="kClear" aria-label="Clear letter (hold to clear message)"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M9 9l6 6M15 9l-6 6"/></svg><small>CLR</small></button>
+  </section>
+</div>
+
+<!-- ===== Bottom sheet ===== -->
+<div class="sheet" id="sheet" aria-hidden="true">
+  <div class="backdrop" id="sheetBackdrop"></div>
+  <div class="panel" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+    <div class="grip"></div>
+    <div class="sheethead"><h2 id="sheetTitle">SETTINGS</h2>
+      <button class="ib" id="sheetClose" aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg></button></div>
+    <div class="sheetbody" id="sheetBody"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+'use strict';
+/* =====================================================================
+   MORSE TRAINER — single-file app
+   ---------------------------------------------------------------------
+   Sections:
+     0. Utilities
+     1. Morse data + decoder
+     2. Event bus (lets future transports — flashlight, Bluetooth,
+        two-phone messaging — hook in without touching core logic)
+     3. Local storage, settings, stats
+     4. Audio (Web Audio API)
+     5. Haptics
+     6. Transmitter (plays Morse through registered outputs)
+     7. Tree rendering (SVG)
+     8. UI helpers (readout, pad, toast, sheet)
+     9. Input timing (Keyer) + letter assembly (Input)
+    10. Game modes
+    11. Settings + calibration panels
+    12. Wiring / boot
+   ===================================================================== */
+
+/* =====================================================================
+   0. UTILITIES
+   ===================================================================== */
+const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
+const now = () => performance.now();
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const fmtMs = ms => ms == null || !isFinite(ms) ? '—' : (ms < 1000 ? Math.round(ms) + 'ms' : (ms / 1000).toFixed(2) + 's');
+const fmtClock = ms => { const s = Math.max(0, Math.round(ms / 1000)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+const ICON = {
+  soundOn:'<svg viewBox="0 0 24 24"><path d="M11 5L6 9H3v6h3l5 4z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></svg>',
+  soundOff:'<svg viewBox="0 0 24 24"><path d="M11 5L6 9H3v6h3l5 4z"/><path d="M22 9l-6 6M16 9l6 6"/></svg>',
+  haptic:'<svg viewBox="0 0 24 24"><rect x="7" y="3" width="10" height="18" rx="2.5"/><path d="M3 9v6M21 9v6"/></svg>',
+  trash:'<svg viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></svg>',
+  copy:'<svg viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>',
+  play:'<svg viewBox="0 0 24 24"><path d="M7 4l13 8-13 8z"/></svg>',
+  stop:'<svg viewBox="0 0 24 24"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>',
+  edit:'<svg viewBox="0 0 24 24"><path d="M4 20h4L19 9l-4-4L4 16z"/></svg>',
+  share:'<svg viewBox="0 0 24 24"><path d="M12 3v13M7 8l5-5 5 5M5 14v6h14v-6"/></svg>',
+  bulb:'<svg viewBox="0 0 24 24"><path d="M9 18h6M10 21h4M12 3a6 6 0 0 0-4 10.5c.7.7 1 1.5 1 2.5h6c0-1 .3-1.8 1-2.5A6 6 0 0 0 12 3z"/></svg>',
+  skip:'<svg viewBox="0 0 24 24"><path d="M5 5l9 7-9 7zM18 5v14"/></svg>',
+  restart:'<svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg>',
+};
+
+/* =====================================================================
+   1. MORSE DATA + DECODER
+   '.' = dot, '-' = dash. Dot branches LEFT in the tree, dash branches RIGHT.
+   ===================================================================== */
+const MORSE = {
+  A:'.-',   B:'-...', C:'-.-.', D:'-..',  E:'.',    F:'..-.', G:'--.',  H:'....', I:'..',
+  J:'.---', K:'-.-',  L:'.-..', M:'--',   N:'-.',   O:'---',  P:'.--.', Q:'--.-', R:'.-.',
+  S:'...',  T:'-',    U:'..-',  V:'...-', W:'.--',  X:'-..-', Y:'-.--', Z:'--..',
+  '0':'-----','1':'.----','2':'..---','3':'...--','4':'....-',
+  '5':'.....','6':'-....','7':'--...','8':'---..','9':'----.',
+  // Common punctuation (decoder only; not drawn in the tree)
+  '.':'.-.-.-', ',':'--..--', '?':'..--..', "'":'.----.', '!':'-.-.--', '/':'-..-.',
+  '(':'-.--.', ')':'-.--.-', '&':'.-...', ':':'---...', ';':'-.-.-.', '=':'-...-',
+  '+':'.-.-.', '-':'-....-', '"':'.-..-.', '@':'.--.-.'
+};
+const REVERSE = Object.fromEntries(Object.entries(MORSE).map(([k, v]) => [v, k]));
+const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+const DIGITS = '0123456789'.split('');
+const MAX_SEQ = 7;                    // longest pattern we will accept before forcing a commit
+
+/** Decode a dot/dash string. Returns the character, or null if unknown. */
+const decode = seq => REVERSE[seq] || null;
+/** True when some longer code starts with `seq` (i.e. the user can keep going). */
+const canContinue = seq => Object.keys(REVERSE).some(k => k.length > seq.length && k.startsWith(seq));
+/** Pretty glyphs: ".-." → "• — •" */
+const glyph = seq => seq.split('').map(s => s === '.' ? '•' : '—').join(' ');
+/** Is this character transmittable? */
+const sendable = ch => ch === ' ' || MORSE[ch] != null;
+
+/* =====================================================================
+   2. EVENT BUS
+   Events emitted:  'keydown' | 'keyup' {ms,sym} | 'symbol' {sym,seq,src}
+                    'letter' {seq,ch,result} | 'space' | 'mode' {id}
+   FUTURE: a FlashlightTransport or BluetoothTransport would subscribe to
+   'symbol'/'letter' to mirror the user's keying to another device, and a
+   receiver would call Input.addSymbol() for incoming remote symbols.
+   ===================================================================== */
+const Bus = {
+  handlers: {},
+  on(evt, fn) { (this.handlers[evt] ||= []).push(fn); },
+  emit(evt, data) { (this.handlers[evt] || []).forEach(fn => { try { fn(data); } catch (e) { console.error(e); } }); }
+};
+
+/* =====================================================================
+   3. LOCAL STORAGE, SETTINGS, STATS
+   ===================================================================== */
+const Store = {
+  prefix: 'morseTrainer.v1.',
+  get(key, fallback) {
+    try { const v = localStorage.getItem(this.prefix + key); return v == null ? fallback : JSON.parse(v); }
+    catch (e) { return fallback; }
+  },
+  set(key, val) { try { localStorage.setItem(this.prefix + key, JSON.stringify(val)); } catch (e) {} }
+};
+
+const DEFAULTS = {
+  threshold: 250,      // ms — shorter press = dot, longer = dash
+  letterPause: 700,    // ms of silence after last symbol → letter is complete
+  wordPause: 1800,     // ms of silence after last symbol → word space (auto, Explore/Decode)
+  autoSpace: true,
+  sound: true,
+  haptics: true,
+  level: 'beginner',   // 'beginner' | 'advanced'
+  showNumbers: true,   // draw digits layer in the tree
+  toneHz: 640,
+  volume: 0.7,
+  wpm: 14,             // playback speed for hints / transmit
+};
+const settings = Object.assign({}, DEFAULTS, Store.get('settings', {}));
+function saveSettings() { Store.set('settings', settings); applySettings(); }
+
+const Stats = Object.assign({
+  learnBestStreak: 0,
+  learnTotal: 0,
+  speedBest: {},            // { "60": {correct, bestStreak, avg, fastest} }
+  letters: {},              // { A: {ok, miss} }
+  presses: { dot: [], dash: [] },
+  seenIntro: false,
+}, Store.get('stats', {}));
+Stats.save = function () { const { save, ...data } = this; Store.set('stats', data); };
+Stats.recordPress = function (sym, ms) {
+  const arr = this.presses[sym === '.' ? 'dot' : 'dash'];
+  arr.push(Math.round(ms)); if (arr.length > 30) arr.shift();
+};
+Stats.recordLetter = function (ch, ok) {
+  const r = this.letters[ch] ||= { ok: 0, miss: 0 };
+  ok ? r.ok++ : r.miss++;
+};
+const avg = arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+
+/* =====================================================================
+   4. AUDIO — Web Audio API
+   A persistent side-tone oscillator gives zero-latency keying while the
+   pad is held. One-shot notes are used for buttons, hints, and feedback.
+   ===================================================================== */
+const Sound = {
+  ctx: null, master: null, toneGain: null, osc: null,
+
+  /** Create / resume the AudioContext. Must be called from a user gesture on iOS. */
+  init() {
+    if (this.ctx) {
+      if (this.ctx.state !== 'running') this.ctx.resume().catch(() => {});
+      return this.ctx;
+    }
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return null;
+    try {
+      const ctx = this.ctx = new AC();
+      this.master = ctx.createGain();
+      this.master.gain.value = settings.volume;
+      this.master.connect(ctx.destination);
+      this.toneGain = ctx.createGain();
+      this.toneGain.gain.value = 0;
+      this.toneGain.connect(this.master);
+      this.osc = ctx.createOscillator();
+      this.osc.type = 'sine';
+      this.osc.frequency.value = settings.toneHz;
+      this.osc.connect(this.toneGain);
+      this.osc.start();
+      // Play a 1-sample silent buffer: unlocks audio on older iOS.
+      const b = ctx.createBuffer(1, 1, 22050), s = ctx.createBufferSource();
+      s.buffer = b; s.connect(ctx.destination); s.start(0);
+    } catch (e) { this.ctx = null; }
+    return this.ctx;
+  },
+  applySettings() {
+    if (!this.ctx) return;
+    this.master.gain.setTargetAtTime(settings.volume, this.ctx.currentTime, 0.02);
+    this.osc.frequency.setTargetAtTime(settings.toneHz, this.ctx.currentTime, 0.01);
+  },
+  /** Side-tone on (key down). Short ramps avoid clicks. */
+  toneOn() {
+    if (!settings.sound) return;
+    const ctx = this.init(); if (!ctx) return;
+    const t = ctx.currentTime, g = this.toneGain.gain;
+    g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(0.5, t + 0.005);
+  },
+  toneOff() {
+    if (!this.ctx) return;
+    const t = this.ctx.currentTime, g = this.toneGain.gain;
+    g.cancelScheduledValues(t); g.setValueAtTime(g.value, t); g.linearRampToValueAtTime(0, t + 0.008);
+  },
+  /** Schedule a single enveloped note. */
+  note(freq, start, dur, type = 'sine', vol = 0.35) {
+    const ctx = this.ctx; if (!ctx) return;
+    const o = ctx.createOscillator(), g = ctx.createGain();
+    o.type = type; o.frequency.value = freq;
+    g.gain.setValueAtTime(0, start);
+    g.gain.linearRampToValueAtTime(vol, start + 0.006);
+    g.gain.setValueAtTime(vol, start + Math.max(0.007, dur - 0.012));
+    g.gain.linearRampToValueAtTime(0, start + dur);
+    o.connect(g); g.connect(this.master);
+    o.start(start); o.stop(start + dur + 0.03);
+  },
+  unit() { return 1.2 / settings.wpm; },               // seconds per Morse unit
+  /** Fixed-length beep for the on-screen • and — buttons. */
+  symbol(sym) {
+    if (!settings.sound || !this.init()) return;
+    const u = Math.max(0.07, this.unit());
+    this.note(settings.toneHz, this.ctx.currentTime + 0.003, sym === '.' ? u : u * 3, 'sine', 0.5);
+  },
+  success() {
+    if (!settings.sound || !this.init()) return;
+    const t = this.ctx.currentTime + 0.01;
+    [[880, 0], [1175, 0.075], [1568, 0.15]].forEach(([f, d]) => this.note(f, t + d, 0.14, 'triangle', 0.28));
+  },
+  fanfare() {
+    if (!settings.sound || !this.init()) return;
+    const t = this.ctx.currentTime + 0.01;
+    [[784, 0], [988, .1], [1175, .2], [1568, .32], [1175, .48], [1568, .58]].forEach(([f, d]) => this.note(f, t + d, 0.16, 'triangle', 0.26));
+  },
+  error() {
+    if (!settings.sound || !this.init()) return;
+    const t = this.ctx.currentTime + 0.01;
+    this.note(233, t, 0.09, 'square', 0.07);
+    this.note(185, t + 0.1, 0.14, 'square', 0.07);
+  },
+  tick(freq = 1400) {
+    if (!settings.sound || !this.init()) return;
+    this.note(freq, this.ctx.currentTime + 0.002, 0.03, 'sine', 0.12);
+  }
+};
+
+/* =====================================================================
+   5. HAPTICS
+   Android Chrome: navigator.vibrate with real patterns.
+   iPhone Safari: no vibrate API; on iOS 18+ toggling a <input switch>
+   via its label produces a system haptic tick, which we use as a fallback.
+   ===================================================================== */
+const Haptics = {
+  hasVibrate: typeof navigator.vibrate === 'function',
+  iosLabel: null,
+  setup() { if (!this.hasVibrate) this.iosLabel = $('#iosHapticLabel'); },
+  tickIOS(times = 1) {
+    if (!this.iosLabel) return;
+    for (let i = 0; i < times; i++) setTimeout(() => { try { this.iosLabel.click(); } catch (e) {} }, i * 90);
+  },
+  buzz(pattern, iosTicks = 1) {
+    if (!settings.haptics) return;
+    if (this.hasVibrate) { try { navigator.vibrate(pattern); } catch (e) {} }
+    else this.tickIOS(iosTicks);
+  },
+  symbol(sym) { this.buzz(sym === '.' ? 14 : 55, 1); },
+  success()   { this.buzz([28, 55, 28, 55, 70], 2); },
+  error()     { this.buzz([90], 1); },
+  light()     { this.buzz(8, 1); }
+};
+
+/* =====================================================================
+   6. TRANSMITTER — plays Morse text through registered outputs.
+   Outputs implement { on(sym), off() } and are called in real time.
+   FUTURE: register a flashlight output (torch via MediaStreamTrack
+   applyConstraints({advanced:[{torch:true}]}) on Android) or a
+   Bluetooth/WebRTC output here; nothing else needs to change.
+   ===================================================================== */
+const Transmitter = {
+  outputs: [],
+  timers: [],
+  playing: false,
+  register(output) { this.outputs.push(output); },
+  stop() {
+    this.timers.forEach(clearTimeout); this.timers = [];
+    if (this.playing) this.outputs.forEach(o => { try { o.off(); } catch (e) {} });
+    this.playing = false;
+    UI.padTx(false);
+  },
+  /**
+   * Play text as Morse. hooks: onChar(i,ch), onSymbol(seqSoFar,i), onCharEnd(i,ch), onDone()
+   */
+  play(text, hooks = {}) {
+    this.stop();
+    Sound.init();
+    const u = 1200 / settings.wpm;           // ms per unit
+    let t = 30;
+    const chars = text.toUpperCase().split('');
+    const at = (ms, fn) => this.timers.push(setTimeout(fn, ms));
+    this.playing = true;
+    chars.forEach((ch, i) => {
+      if (ch === ' ') { t += u * 4; return; }   // 3 already added after previous letter → 7 total
+      const code = MORSE[ch]; if (!code) return;
+      at(t, () => hooks.onChar && hooks.onChar(i, ch));
+      code.split('').forEach((sym, j) => {
+        const len = sym === '.' ? u : u * 3;
+        const sofar = code.slice(0, j + 1);
+        at(t, () => { this.outputs.forEach(o => o.on(sym, len)); hooks.onSymbol && hooks.onSymbol(sofar, i); });
+        at(t + len, () => this.outputs.forEach(o => o.off()));
+        t += len + u;
+      });
+      at(t - u, () => hooks.onCharEnd && hooks.onCharEnd(i, ch));
+      t += u * 2;                               // letter gap = 3 units total
+    });
+    at(t, () => { this.playing = false; hooks.onDone && hooks.onDone(); });
+    return t;
+  }
+};
+// Built-in outputs: side-tone audio, pad light, vibration.
+Transmitter.register({ on() { Sound.toneOn(); }, off() { Sound.toneOff(); } });
+Transmitter.register({ on() { UI.padTx(true); }, off() { UI.padTx(false); } });
+Transmitter.register({ on(sym, len) { if (settings.haptics && Haptics.hasVibrate) try { navigator.vibrate(Math.round(len)); } catch (e) {} }, off() {} });
+
+/* =====================================================================
+   7. TREE RENDERING (SVG)
+   Layout: root at top-centre; depth d has 2^d slots across 360 units.
+   Dot child = left (index*2), dash child = right (index*2+1).
+   Depth 4 and the digit layer (depth 5) are staggered on two rows so
+   labels stay readable on a phone.
+   ===================================================================== */
+const Tree = {
+  svg: null,
+  nodes: {},      // seq → { g, halo, depth, char, empty }
+  edges: {},      // child seq → { base, on, tgt, len }
+  onSet: new Set(),
+  curSeq: null,
+  previewSeq: null,
+  targetSeq: null,
+  W: 360,
+  Y: [16, 60, 106, 152, [196, 224], [262, 286]],
+  R: [9, 17, 15, 13.5, 12, 9.5],
+  MID: [0, 34, 84, 130, 174, 246],      // y of the horizontal "bus" segment for each depth
+  FONT: [0, 19, 16, 14, 12.5, 10.5],
+
+  idx(seq) { let i = 0; for (const s of seq) i = i * 2 + (s === '-' ? 1 : 0); return i; },
+  pos(seq) {
+    const d = seq.length;
+    if (!d) return { x: this.W / 2, y: this.Y[0] };
+    const i = this.idx(seq);
+    const x = (i + 0.5) * this.W / (1 << d);
+    const y = Array.isArray(this.Y[d]) ? this.Y[d][i % 2] : this.Y[d];
+    return { x, y };
+  },
+  radius(seq) { return this.nodes[seq] && this.nodes[seq].empty ? 4.5 : this.R[seq.length]; },
+
+  /** Build an orthogonal trace with rounded corners (circuit-board look). */
+  tracePath(pts, rad) {
+    const f = n => Math.round(n * 100) / 100;
+    let d = `M${f(pts[0][0])} ${f(pts[0][1])}`;
+    for (let i = 1; i < pts.length - 1; i++) {
+      const [x0, y0] = pts[i - 1], [x1, y1] = pts[i], [x2, y2] = pts[i + 1];
+      const l1 = Math.hypot(x1 - x0, y1 - y0), l2 = Math.hypot(x2 - x1, y2 - y1);
+      const r = Math.min(rad, l1 / 2, l2 / 2);
+      if (r < 0.5 || !l1 || !l2) { d += ` L${f(x1)} ${f(y1)}`; continue; }
+      const ax = x1 - (x1 - x0) / l1 * r, ay = y1 - (y1 - y0) / l1 * r;
+      const bx = x1 + (x2 - x1) / l2 * r, by = y1 + (y2 - y1) / l2 * r;
+      d += ` L${f(ax)} ${f(ay)} Q${f(x1)} ${f(y1)} ${f(bx)} ${f(by)}`;
+    }
+    const l = pts[pts.length - 1];
+    return d + ` L${f(l[0])} ${f(l[1])}`;
+  },
+
+  build() {
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = this.svg = $('#tree');
+    const el = (tag, attrs = {}, parent) => {
+      const e = document.createElementNS(NS, tag);
+      for (const k in attrs) e.setAttribute(k, attrs[k]);
+      if (parent) parent.appendChild(e);
+      return e;
+    };
+    svg.innerHTML = '';
+    const defs = el('defs', {}, svg);
+    defs.innerHTML = `
+      <filter id="glow" filterUnits="userSpaceOnUse" x="-20" y="-20" width="400" height="340">
+        <feGaussianBlur stdDeviation="3.2" result="b"/>
+        <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+      <filter id="soft" filterUnits="userSpaceOnUse" x="-20" y="-20" width="400" height="340">
+        <feGaussianBlur stdDeviation="5"/>
+      </filter>
+      <pattern id="grid" width="12" height="12" patternUnits="userSpaceOnUse">
+        <circle cx="1" cy="1" r=".7" fill="#13242d"/>
+      </pattern>`;
+    el('rect', { x: -40, y: -40, width: 440, height: 400, fill: 'url(#grid)' }, svg);
+
+    // Which sequences get a node: every pattern up to depth 4, plus digits at depth 5.
+    const seqs = [''];
+    for (let d = 1; d <= 4; d++) for (let i = 0; i < (1 << d); i++) {
+      let s = ''; for (let b = d - 1; b >= 0; b--) s += (i >> b) & 1 ? '-' : '.';
+      seqs.push(s);
+    }
+    DIGITS.forEach(dg => seqs.push(MORSE[dg]));
+
+    const gHalo = el('g', { filter: 'url(#soft)' }, svg);
+    const gBase = el('g', {}, svg);
+    const gTgt = el('g', {}, svg);
+    const gOn = el('g', { filter: 'url(#glow)' }, svg);
+    const gSym = el('g', {}, svg);
+    const gNodes = el('g', {}, svg);
+    const gDigits = { halo: el('g', { class: 'dgrp' }, gHalo), base: el('g', { class: 'dgrp' }, gBase), tgt: el('g', { class: 'dgrp' }, gTgt),
+                      on: el('g', { class: 'dgrp' }, gOn), nodes: el('g', { class: 'dgrp' }, gNodes) };
+
+    // Nodes first (so radii are known), then edges.
+    seqs.forEach(seq => {
+      const ch = seq ? decode(seq) : null;
+      const visible = ch && (LETTERS.includes(ch) || DIGITS.includes(ch));
+      this.nodes[seq] = { depth: seq.length, char: visible ? ch : null, empty: !!seq && !visible };
+    });
+
+    seqs.forEach(seq => {
+      if (!seq) return;
+      const parent = seq.slice(0, -1), d = seq.length;
+      const p = this.pos(parent), c = this.pos(seq);
+      const pr = parent ? this.radius(parent) : this.R[0];
+      const cr = this.radius(seq);
+      const mid = this.MID[d];
+      const pts = [[p.x, p.y + pr], [p.x, mid], [c.x, mid], [c.x, c.y - cr]];
+      const dstr = this.tracePath(pts, d <= 2 ? 10 : 5);
+      const isDigitLayer = d === 5;
+      const base = el('path', { d: dstr, class: 'trace' }, isDigitLayer ? gDigits.base : gBase);
+      const tgt = el('path', { d: dstr, class: 'ttrace' }, isDigitLayer ? gDigits.tgt : gTgt);
+      const on = el('path', { d: dstr, class: 'otrace' }, isDigitLayer ? gDigits.on : gOn);
+      const len = on.getTotalLength ? on.getTotalLength() : 100;
+      on.style.setProperty('--len', (len + 1).toFixed(1) + 'px');
+      this.edges[seq] = { base, tgt, on, len };
+      // Beginner-mode • / — tags on upper branches
+      if (d <= 2) {
+        const tx = (p.x + c.x) / 2, ty = mid - 4;
+        const t = el('text', { x: tx, y: ty, class: 'symtag' }, gSym);
+        t.textContent = seq.endsWith('.') ? '•' : '—';
+      }
+    });
+
+    seqs.forEach(seq => {
+      const n = this.nodes[seq], { x, y } = this.pos(seq), r = seq ? this.radius(seq) : this.R[0];
+      const isDigitLayer = seq.length === 5;
+      const parentG = isDigitLayer ? gDigits.nodes : gNodes;
+      n.halo = el('circle', { cx: x, cy: y, r: r + 4, class: 'halo' }, isDigitLayer ? gDigits.halo : gHalo);
+      const g = n.g = el('g', { class: 'node' + (seq ? '' : ' root idle') + (n.empty ? ' empty' : '') + (isDigitLayer ? ' dg' : '') }, parentG);
+      el('circle', { cx: x, cy: y, r: r, class: 'ring' }, g);
+      el('circle', { cx: x, cy: y, r: r, class: 'body' }, g);
+      if (!seq) el('circle', { cx: x, cy: y, r: 3.2, class: 'core-dot' }, g);
+      if (n.char) {
+        const t = el('text', { x, y, dy: '0.36em', class: 'lbl', 'font-size': this.FONT[seq.length] }, g);
+        t.textContent = n.char;
+      }
+    });
+
+    this.spark = el('circle', { r: 3.4, fill: '#f2feff', filter: 'url(#glow)', opacity: 0 }, svg);
+    this.applyLayout();
+  },
+
+  /** Resize the viewBox depending on whether the digit layer is shown. */
+  applyLayout() {
+    document.body.classList.toggle('nonum', !settings.showNumbers);
+    this.svg.setAttribute('viewBox', settings.showNumbers ? '0 2 360 296' : '0 2 360 236');
+  },
+
+  /** Deepest sequence in `seq` that has a drawn node. */
+  deepest(seq) {
+    let best = '';
+    for (let i = 1; i <= seq.length; i++) { const p = seq.slice(0, i); if (this.nodes[p]) best = p; else break; }
+    return best;
+  },
+  nodeClass(seq, cls, on) {
+    const n = this.nodes[seq]; if (!n) return;
+    n.g.classList.toggle(cls, on);
+    if (['on', 'cur', 'ok', 'bad', 'target'].includes(cls)) n.halo.classList.toggle(cls, on);
+  },
+
+  /** Light the route for the current input sequence. Animates newly added branches. */
+  setPath(seq) {
+    const deep = this.deepest(seq);
+    const over = deep.length < seq.length;
+    const want = new Set();
+    for (let i = 1; i <= deep.length; i++) want.add(deep.slice(0, i));
+
+    for (const p of this.onSet) if (!want.has(p)) {
+      this.edges[p].on.classList.remove('on', 'ok', 'bad');
+      this.nodeClass(p, 'on', false);
+    }
+    const added = [];
+    for (const p of want) if (!this.onSet.has(p)) {
+      added.push(p);
+      this.edges[p].on.classList.add('on');
+      this.nodeClass(p, 'on', true);
+    }
+    this.onSet = want;
+
+    // Root lights whenever a sequence is in progress
+    const root = this.nodes[''];
+    root.g.classList.toggle('on', !!seq);
+    root.g.classList.toggle('idle', !seq);
+
+    // Current node = brightest
+    if (this.curSeq != null) { this.nodeClass(this.curSeq, 'cur', false); this.nodeClass(this.curSeq, 'over', false); }
+    this.curSeq = seq ? deep : null;
+    if (this.curSeq != null && seq) {
+      this.nodeClass(deep, 'cur', true);
+      if (over) this.nodeClass(deep, 'over', true);
+    }
+
+    // Beginner hint: faintly mark the two possible next moves
+    $$('.node.nx', this.svg).forEach(n => n.classList.remove('nx'));
+    if (settings.level === 'beginner') {
+      [deep + '.', deep + '-'].forEach(s => { if (this.nodes[s] && !over) this.nodes[s].g.classList.add('nx'); });
+    }
+
+    if (added.length) {
+      const last = added[added.length - 1];
+      this.sparkAlong(last);
+      const n = this.nodes[last];
+      n.g.classList.remove('pop'); void n.g.getBoundingClientRect(); n.g.classList.add('pop');
+    }
+  },
+
+  /** Run a bright particle along a freshly lit branch. */
+  sparkAlong(seq) {
+    const e = this.edges[seq]; if (!e || !e.on.getPointAtLength) return;
+    const start = now(), dur = 240, sp = this.spark;
+    cancelAnimationFrame(this._sparkRaf);
+    const step = () => {
+      const t = Math.min(1, (now() - start) / dur);
+      const pt = e.on.getPointAtLength(e.len * (1 - Math.pow(1 - t, 2)));
+      sp.setAttribute('cx', pt.x); sp.setAttribute('cy', pt.y);
+      sp.setAttribute('opacity', t < 1 ? 1 : 0);
+      if (t < 1) this._sparkRaf = requestAnimationFrame(step);
+    };
+    step();
+  },
+
+  /** While the pad is held: ghost-preview where the press will land. */
+  setPreview(seq) {
+    if (this.previewSeq) {
+      this.nodeClass(this.previewSeq, 'pv', false);
+      const e = this.edges[this.previewSeq]; if (e) e.base.classList.remove('pv');
+    }
+    this.previewSeq = null;
+    if (seq && this.nodes[seq] && this.deepest(seq) === seq) {
+      this.previewSeq = seq;
+      this.nodeClass(seq, 'pv', true);
+      this.edges[seq].base.classList.add('pv');
+    }
+  },
+
+  /** Highlight a target letter's route in amber (Learn / Practice). */
+  setTarget(seq) {
+    if (this.targetSeq) {
+      for (let i = 1; i <= this.targetSeq.length; i++) {
+        const p = this.targetSeq.slice(0, i); if (this.edges[p]) this.edges[p].tgt.classList.remove('on');
+      }
+      this.nodeClass(this.targetSeq, 'target', false);
+    }
+    this.targetSeq = null;
+    if (!seq || !this.nodes[seq]) return;
+    this.targetSeq = seq;
+    for (let i = 1; i <= seq.length; i++) { const p = seq.slice(0, i); if (this.edges[p]) this.edges[p].tgt.classList.add('on'); }
+    this.nodeClass(seq, 'target', true);
+  },
+
+  /** Brief result flash on the node the user landed on: 'ok' | 'bad' | 'commit'. */
+  flash(seq, kind) {
+    const deep = this.deepest(seq); if (!deep) return;
+    const n = this.nodes[deep];
+    if (kind === 'commit') {
+      n.g.classList.remove('commit'); void n.g.getBoundingClientRect(); n.g.classList.add('commit');
+      return;
+    }
+    this.nodeClass(deep, kind, true);
+    for (let i = 1; i <= deep.length; i++) this.edges[deep.slice(0, i)].on.classList.add(kind);
+    clearTimeout(n._ft);
+    n._ft = setTimeout(() => {
+      this.nodeClass(deep, kind, false);
+      for (let i = 1; i <= deep.length; i++) this.edges[deep.slice(0, i)].on.classList.remove(kind);
+    }, 480);
+  }
+};
+
+/* =====================================================================
+   8. UI HELPERS
+   ===================================================================== */
+const UI = {
+  sheetOpen: false,
+  els: {},
+  init() {
+    ['seq', 'letter', 'pauseFill', 'screen', 'pad', 'interp', 'ms', 'coreGlyph', 'meterFill', 'toast', 'modeName', 'padsub']
+      .forEach(id => this.els[id] = $('#' + id));
+  },
+
+  /** Update the large sequence + live letter readout. */
+  updateSeq() {
+    const seq = Input.seq, e = this.els;
+    e.seq.classList.remove('ok', 'bad');
+    e.letter.classList.remove('ok', 'bad');
+    if (!seq) {
+      e.seq.innerHTML = '<span class="ph">AWAITING INPUT</span>';
+      if (!this._holdLetter) { e.letter.textContent = ''; e.letter.classList.add('dim'); }
+      return;
+    }
+    this._holdLetter = false;
+    e.seq.innerHTML = seq.split('').map((s, i) => `<span class="${i === seq.length - 1 ? 's' : ''}">${s === '.' ? '•' : '—'}</span>`).join('');
+    const ch = decode(seq);
+    e.letter.classList.toggle('dim', !ch);
+    if (ch) e.letter.textContent = ch;
+    else if (seq.length < MAX_SEQ && canContinue(seq)) e.letter.textContent = '…';
+    else { e.letter.textContent = '?'; e.letter.classList.add('bad'); e.letter.classList.remove('dim'); }
+  },
+  /** After a letter is committed, keep showing it briefly. */
+  showCommitted(seq, ch, result) {
+    const e = this.els;
+    this._holdLetter = true;
+    e.letter.classList.remove('dim', 'ok', 'bad');
+    e.letter.textContent = ch || '?';
+    if (result === true || (result == null && ch)) e.letter.classList.add('ok');
+    if (result === false || !ch) e.letter.classList.add('bad');
+    e.seq.innerHTML = `<span>${seq.split('').map(s => s === '.' ? '•' : '—').join('</span><span>')}</span>`;
+    e.seq.classList.add(result === false || !ch ? 'bad' : 'ok');
+    clearTimeout(this._commitT);
+    this._commitT = setTimeout(() => {
+      if (!Input.seq) { this._holdLetter = false; this.updateSeq(); e.letter.textContent = ch || ''; e.letter.classList.add('dim'); }
+    }, 650);
+  },
+
+  /** Thin countdown bar showing time left before the letter auto-commits. */
+  startPauseBar(ms) {
+    const f = this.els.pauseFill;
+    f.style.transition = 'none'; f.style.width = '100%';
+    void f.offsetWidth;
+    f.style.transition = `width ${ms}ms linear`; f.style.width = '0%';
+  },
+  stopPauseBar() { const f = this.els.pauseFill; f.style.transition = 'none'; f.style.width = '0%'; },
+
+  padDown() { this.els.pad.classList.add('down'); this.els.coreGlyph.textContent = '•'; },
+  padUp() { this.els.pad.classList.remove('down'); this.els.meterFill.style.width = '0%'; this.els.coreGlyph.textContent = '•'; },
+  padTx(on) { this.els.pad && this.els.pad.classList.toggle('tx', on); },
+  /** Live hold feedback: ms counter, meter, glyph switch at threshold. */
+  padProgress(ms) {
+    const e = this.els, th = settings.threshold;
+    e.ms.textContent = Math.round(ms) + ' ms';
+    const pct = Math.min(1, ms / (th * 2)) * 100;
+    e.meterFill.style.width = pct + '%';
+    const dash = ms >= th;
+    e.meterFill.classList.toggle('dash', dash);
+    e.coreGlyph.textContent = dash ? '—' : '•';
+  },
+  showInterp(sym, ms) {
+    const i = this.els.interp;
+    i.textContent = sym === '.' ? 'DOT •' : 'DASH —';
+    i.classList.remove('show'); void i.offsetWidth; i.classList.add('show');
+    if (ms != null) this.els.ms.textContent = Math.round(ms) + ' ms';
+  },
+
+  fx(kind) {
+    const s = this.els.screen;
+    s.classList.remove('fx-ok', 'fx-bad'); void s.offsetWidth; s.classList.add(kind === 'ok' ? 'fx-ok' : 'fx-bad');
+  },
+  toast(msg, ms = 1800) {
+    const t = this.els.toast;
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(this._toastT); this._toastT = setTimeout(() => t.classList.remove('show'), ms);
+  },
+
+  /* ----- Bottom sheet (no browser alerts/popups anywhere) ----- */
+  openSheet(title, html, onMount) {
+    Keyer.cancel();
+    Input.pauseTimers();
+    $('#sheetTitle').textContent = title;
+    const body = $('#sheetBody');
+    body.innerHTML = html; body.scrollTop = 0;
+    $('#sheet').classList.add('open'); $('#sheet').setAttribute('aria-hidden', 'false');
+    this.sheetOpen = true;
+    if (onMount) onMount(body);
+  },
+  closeSheet() {
+    if (!this.sheetOpen) return;
+    $('#sheet').classList.remove('open'); $('#sheet').setAttribute('aria-hidden', 'true');
+    this.sheetOpen = false;
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    if (this._onSheetClose) { const f = this._onSheetClose; this._onSheetClose = null; f(); }
+    if (Input.seq) Input.armLetterTimer();
+  }
+};
+
+/* =====================================================================
+   9. INPUT TIMING
+   Keyer  — measures press duration on the pad / spacebar → dot or dash.
+   Input  — accumulates symbols into a letter; commits after letterPause.
+   ===================================================================== */
+const Input = {
+  seq: '',
+  letterTimer: 0, wordTimer: 0, clearTimer: 0,
+  lastSymbolAt: 0, firstSymbolAt: 0,
+
+  addSymbol(sym, src) {
+    Transmitter.stop();
+    if (this.seq.length >= MAX_SEQ) return;              // ignore runaway input
+    clearTimeout(this.clearTimer); clearTimeout(this.wordTimer);
+    if (!this.seq) this.firstSymbolAt = now();
+    this.seq += sym;
+    this.lastSymbolAt = now();
+    Bus.emit('symbol', { sym, seq: this.seq, src });
+    UI.updateSeq();
+    Tree.setPath(this.seq);
+    this.armLetterTimer();                                // timer restarts after EVERY symbol
+  },
+
+  armLetterTimer() {
+    clearTimeout(this.letterTimer);
+    if (!this.seq) return;
+    this.letterTimer = setTimeout(() => this.commit('pause'), settings.letterPause);
+    UI.startPauseBar(settings.letterPause);
+  },
+  /** Called on key-down: nothing may commit while the finger is down. */
+  holdTimers() {
+    clearTimeout(this.letterTimer); clearTimeout(this.wordTimer); clearTimeout(this.clearTimer);
+    UI.stopPauseBar();
+  },
+  pauseTimers() { this.holdTimers(); },
+
+  /** Finish the current letter: hand it to the active mode, THEN clear the sequence. */
+  commit(reason) {
+    clearTimeout(this.letterTimer); UI.stopPauseBar();
+    const seq = this.seq;
+    if (!seq) return;
+    const ch = decode(seq);
+    let result = null;
+    try { result = Modes.current.onLetter(seq, ch); } catch (e) { console.error(e); }
+    Bus.emit('letter', { seq, ch, result, reason });
+    Tree.flash(seq, result === true ? 'ok' : result === false ? 'bad' : 'commit');
+    UI.showCommitted(seq, ch, result);
+    this.seq = '';                                        // cleared only after processing
+    clearTimeout(this.clearTimer);
+    this.clearTimer = setTimeout(() => { if (!this.seq && !Keyer.pressing) Tree.setPath(''); }, 430);
+    // Auto word-space: wordPause is measured from the last symbol.
+    if (settings.autoSpace && Modes.current.autoSpace && ch) {
+      clearTimeout(this.wordTimer);
+      const wait = Math.max(150, settings.wordPause - (now() - this.lastSymbolAt));
+      this.wordTimer = setTimeout(() => Modes.current.onWordSpace && Modes.current.onWordSpace('auto'), wait);
+    }
+  },
+
+  /** Remove the in-progress sequence without committing. */
+  clearLetter() {
+    this.holdTimers();
+    this.seq = '';
+    UI.updateSeq(); Tree.setPath('');
+  },
+  backspace() {
+    if (this.seq) {
+      this.seq = this.seq.slice(0, -1);
+      UI.updateSeq(); Tree.setPath(this.seq);
+      if (this.seq) this.armLetterTimer(); else this.holdTimers();
+    } else {
+      clearTimeout(this.wordTimer);
+      Modes.current.onBackspace && Modes.current.onBackspace();
+    }
+  },
+  wordSpace() {
+    clearTimeout(this.wordTimer);
+    if (this.seq) this.commit('space');
+    clearTimeout(this.wordTimer);
+    Bus.emit('space');
+    Modes.current.onWordSpace && Modes.current.onWordSpace('manual');
+  },
+  reset() {
+    this.holdTimers();
+    this.seq = '';
+    UI.updateSeq(); Tree.setPath(''); Tree.setPreview(null);
+  }
+};
+
+const Keyer = {
+  pressing: false, t0: 0, raf: 0, crossed: false,
+
+  down() {
+    if (this.pressing || UI.sheetOpen) return;
+    Transmitter.stop();
+    this.pressing = true; this.t0 = now(); this.crossed = false;
+    Input.holdTimers();                                  // a held key can never trigger a commit
+    if (!Input.seq) Tree.setPath('');
+    Sound.toneOn();
+    UI.padDown();
+    Tree.setPreview(Input.seq + '.');
+    Bus.emit('keydown');
+    const tick = () => {
+      if (!this.pressing) return;
+      const ms = now() - this.t0;
+      const past = ms >= settings.threshold;
+      if (past !== this.crossed) { this.crossed = past; Tree.setPreview(Input.seq + (past ? '-' : '.')); }
+      UI.padProgress(ms);
+      this.raf = requestAnimationFrame(tick);
+    };
+    this.raf = requestAnimationFrame(tick);
+  },
+
+  up() {
+    if (!this.pressing) return;
+    const ms = now() - this.t0;
+    this.pressing = false;
+    cancelAnimationFrame(this.raf);
+    Sound.toneOff();
+    Sound.init();                                         // pointerup is a trusted gesture on iOS
+    Tree.setPreview(null);
+    UI.padUp();
+    const sym = ms < settings.threshold ? '.' : '-';
+    Haptics.symbol(sym);
+    UI.showInterp(sym, ms);
+    Stats.recordPress(sym, ms);
+    Bus.emit('keyup', { ms, sym });
+    Input.addSymbol(sym, 'key');
+  },
+
+  /** Interrupted press (system gesture, app backgrounded): discard it. */
+  cancel() {
+    if (!this.pressing) return;
+    this.pressing = false;
+    cancelAnimationFrame(this.raf);
+    Sound.toneOff();
+    Tree.setPreview(null);
+    UI.padUp();
+    if (Input.seq) Input.armLetterTimer();
+  }
+};
+
+/**
+ * Attach reliable press/release handling to an element using Pointer Events only.
+ * One active pointer at a time; pointer capture so sliding off the pad still releases;
+ * touch defaults suppressed so iOS never synthesises mouse events or zooms.
+ */
+function bindPress(el, onDown, onUp, onCancel) {
+  let pid = null;
+  el.addEventListener('pointerdown', e => {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    if (pid !== null) return;                     // ignore a second finger
+    pid = e.pointerId;
+    e.preventDefault();
+    try { el.setPointerCapture(pid); } catch (_) {}
+    onDown(e);
+  });
+  const end = (e, cancelled) => {
+    if (e.pointerId !== pid) return;
+    pid = null;
+    cancelled ? onCancel(e) : onUp(e);
+  };
+  el.addEventListener('pointerup', e => { e.preventDefault(); end(e, false); });
+  el.addEventListener('pointercancel', e => end(e, true));
+  el.addEventListener('lostpointercapture', e => end(e, false));
+  el.addEventListener('contextmenu', e => e.preventDefault());
+  el.addEventListener('touchstart', e => { if (e.cancelable) e.preventDefault(); }, { passive: false });
+  el.addEventListener('touchend', e => { if (e.cancelable) e.preventDefault(); }, { passive: false });
+}
+
+/* =====================================================================
+   10. GAME MODES
+   Each mode: { id, label, autoSpace, enter(el), exit(), onLetter(seq,ch)
+   → true (correct) | false (wrong) | null (neutral), onWordSpace(),
+   onBackspace(), onClearAll() }
+   ===================================================================== */
+
+/** Pick a random letter, weighted toward letters the user misses. */
+function pickLetter(pool, avoid) {
+  const weights = pool.map(ch => {
+    const r = Stats.letters[ch] || { ok: 0, miss: 0 };
+    return ch === avoid ? 0.0001 : 1 + (r.miss * 2.5) / (r.ok + 1);
+  });
+  let total = weights.reduce((a, b) => a + b, 0), x = Math.random() * total;
+  for (let i = 0; i < pool.length; i++) { x -= weights[i]; if (x <= 0) return pool[i]; }
+  return pool[pool.length - 1];
+}
+const POOLS = {
+  starter: { label: 'STARTER', set: 'ETIANMSO'.split('') },
+  letters: { label: 'A–Z', set: LETTERS },
+  all: { label: 'A–Z 0–9', set: [...LETTERS, ...DIGITS] },
+};
+
+/** Explore + Decode share a free-input message engine. */
+function makeMessageMode(id, label, opts = {}) {
+  return {
+    id, label, autoSpace: true,
+    message: Store.get('msg.' + id, ''),
+    freshUntil: 0,
+    enter(el) {
+      el.innerHTML = `
+        <div class="row between">
+          <span class="lab">${opts.big ? 'DECODED MESSAGE' : 'MESSAGE'} · <span id="mCount">0</span></span>
+          <div class="row">
+            ${opts.big ? `<button class="mini" id="mPlay">${ICON.play}PLAY</button><button class="mini" id="mCopy">${ICON.copy}COPY</button>` : ''}
+            <button class="mini ghost" id="mClear" aria-label="Clear message">${ICON.trash}</button>
+          </div>
+        </div>
+        <div class="msg" id="mText"></div>
+        ${opts.big ? '<div class="transcript" id="mTrans"></div>' : ''}`;
+      $('#mClear', el).onclick = () => this.onClearAll();
+      if (opts.big) {
+        $('#mCopy', el).onclick = async () => {
+          const ok = await copyText(this.message.trim());
+          UI.toast(this.message.trim() ? (ok ? 'Message copied' : 'Copy failed — select manually') : 'Nothing to copy yet');
+        };
+        $('#mPlay', el).onclick = () => {
+          if (Transmitter.playing) { Transmitter.stop(); return; }
+          const txt = this.message.trim(); if (!txt) { UI.toast('Send some Morse first'); return; }
+          Transmitter.play(txt, { onSymbol: s => Tree.setPath(s), onCharEnd: () => setTimeout(() => !Input.seq && Tree.setPath(''), 120), onDone: () => Tree.setPath('') });
+        };
+      }
+      this.render();
+    },
+    exit() { Transmitter.stop(); },
+    save() { Store.set('msg.' + id, this.message); },
+    render() {
+      const t = $('#mText'); if (!t) return;
+      const m = this.message;
+      if (!m) t.innerHTML = `<span class="empty">${opts.big ? 'Tap and hold the pad below. Letters appear here automatically after a short pause.' : 'Tap = dot, hold = dash. Pause to finish a letter.'}</span><i class="caret"></i>`;
+      else {
+        const fresh = now() < this.freshUntil;
+        const body = fresh ? esc(m.slice(0, -1)) + `<span class="fresh">${esc(m.slice(-1))}</span>` : esc(m);
+        t.innerHTML = body + '<i class="caret"></i>';
+      }
+      t.scrollTop = t.scrollHeight;
+      $('#mCount').textContent = m.replace(/ /g, '').length + ' chars';
+      const tr = $('#mTrans');
+      if (tr) { tr.textContent = m.split('').map(c => c === ' ' ? '/' : glyph(MORSE[c] || '').replace(/ /g, '')).join('  '); tr.scrollLeft = tr.scrollWidth; }
+    },
+    onLetter(seq, ch) {
+      if (!ch) { Sound.error(); Haptics.error(); UI.toast(`${glyph(seq)} isn't a Morse character`); return false; }
+      this.message += ch; this.freshUntil = now() + 600;
+      this.save(); this.render();
+      setTimeout(() => this.render(), 620);
+      return null;
+    },
+    onWordSpace() {
+      if (this.message && !this.message.endsWith(' ')) { this.message += ' '; this.save(); this.render(); }
+    },
+    onBackspace() { if (this.message) { this.message = this.message.slice(0, -1); this.save(); this.render(); } },
+    onClearAll() { this.message = ''; this.save(); this.render(); UI.toast('Message cleared'); }
+  };
+}
+
+const Explore = makeMessageMode('explore', 'EXPLORE');
+const Decode = makeMessageMode('decode', 'DECODE', { big: true });
+
+/* ----- LEARN ----- */
+const Learn = {
+  id: 'learn', label: 'LEARN', autoSpace: false,
+  target: null, score: 0, streak: 0, hint: false,
+  pool: Store.get('learnPool', 'starter'),
+  enter(el) {
+    el.innerHTML = `
+      <div class="prompt">
+        <div class="tgt" id="lTgt">?</div>
+        <div class="grow">
+          <div class="lab">SEND THIS LETTER</div>
+          <div class="hint" id="lHint"></div>
+          <div class="fb" id="lFb"></div>
+        </div>
+        <div class="stats">
+          <div class="stat"><b id="lScore">0</b><span>SCORE</span></div>
+          <div class="stat" id="lStreakBox"><b id="lStreak">0</b><span>STREAK</span></div>
+        </div>
+      </div>
+      <div class="row between" style="margin-top:8px">
+        <div class="chips" id="lPools">${Object.entries(POOLS).map(([k, p]) => `<button class="chip" data-pool="${k}">${p.label}</button>`).join('')}</div>
+        <div class="row"><button class="mini" id="lHintBtn">${ICON.bulb}HINT</button><button class="mini ghost" id="lSkip" aria-label="Skip">${ICON.skip}</button></div>
+      </div>`;
+    $$('#lPools .chip', el).forEach(b => b.onclick = () => { this.pool = b.dataset.pool; Store.set('learnPool', this.pool); this.syncPools(); this.next(); });
+    $('#lHintBtn', el).onclick = () => this.showHint(true);
+    $('#lSkip', el).onclick = () => { this.streak = 0; this.next(); this.renderStats(); };
+    this.syncPools(); this.renderStats(); this.next();
+  },
+  exit() { Tree.setTarget(null); Transmitter.stop(); },
+  syncPools() { $$('#lPools .chip').forEach(b => b.classList.toggle('sel', b.dataset.pool === this.pool)); },
+  next() {
+    this.target = pickLetter(POOLS[this.pool].set, this.target);
+    this.hint = false;
+    this.promptAt = now();
+    const t = $('#lTgt'); if (!t) return;
+    t.textContent = this.target; t.classList.remove('enter', 'ok'); void t.offsetWidth; t.classList.add('enter');
+    this.renderHint();
+  },
+  renderHint() {
+    const h = $('#lHint'); if (!h) return;
+    const code = MORSE[this.target];
+    const show = settings.level === 'beginner' || this.hint;
+    h.className = 'hint' + (show ? '' : ' hidden');
+    h.textContent = show ? glyph(code) : 'FROM MEMORY — TAP HINT IF STUCK';
+    Tree.setTarget(show ? code : null);
+  },
+  showHint(play) {
+    this.hint = true; this.renderHint();
+    if (play) {
+      const code = MORSE[this.target];
+      Input.clearLetter();
+      Transmitter.play(this.target, { onSymbol: s => Tree.setPath(s), onDone: () => setTimeout(() => { if (!Input.seq) Tree.setPath(''); }, 500) });
+      this.streak = 0; this.renderStats();
+      void code;
+    }
+  },
+  renderStats() {
+    const s = $('#lScore'); if (!s) return;
+    s.textContent = this.score; $('#lStreak').textContent = this.streak;
+    $('#lStreakBox').classList.toggle('hot', this.streak >= 5);
+  },
+  onLetter(seq, ch) {
+    const fb = $('#lFb');
+    if (seq === MORSE[this.target]) {
+      this.score++; this.streak++;
+      Stats.recordLetter(this.target, true); Stats.learnTotal++;
+      if (this.streak > Stats.learnBestStreak) Stats.learnBestStreak = this.streak;
+      Stats.save();
+      Sound.success(); Haptics.success(); UI.fx('ok');
+      const t = $('#lTgt'); t.classList.add('ok');
+      fb.className = 'fb ok';
+      fb.textContent = `✓ ${this.target}  ${glyph(seq)}` + (this.streak > 1 && this.streak % 5 === 0 ? `  ·  ${this.streak} in a row!` : '');
+      this.renderStats();
+      setTimeout(() => this.next(), 420);
+      return true;
+    }
+    Stats.recordLetter(this.target, false); Stats.save();
+    this.streak = 0; this.renderStats();
+    Sound.error(); Haptics.error(); UI.fx('bad');
+    fb.className = 'fb bad';
+    fb.textContent = ch ? `You sent ${ch} (${glyph(seq)}). Try again.` : `${glyph(seq)} isn't a letter. Try again.`;
+    return false;
+  }
+};
+
+/* ----- SPEED ----- */
+const Speed = {
+  id: 'speed', label: 'SPEED', autoSpace: false,
+  state: 'idle', dur: Store.get('speedDur', 60),
+  enter(el) { this.el = el; this.renderIdle(); },
+  exit() { this.stopTimers(); this.state = 'idle'; Tree.setTarget(null); },
+  stopTimers() { clearInterval(this.iv); this.cd && this.cd.forEach(clearTimeout); this.cd = []; },
+  renderIdle() {
+    this.state = 'idle';
+    Tree.setTarget(null);
+    const best = Stats.speedBest[this.dur];
+    this.el.innerHTML = `
+      <div class="row between">
+        <div>
+          <div class="lab">SPEED RUN</div>
+          <div class="fb" style="margin-top:6px">Send as many letters as you can before time runs out.</div>
+        </div>
+        <button class="mini primary" id="sStart">${ICON.play}START</button>
+      </div>
+      <div class="row between" style="margin-top:8px">
+        <div class="chips" id="sDur">${[30, 60, 120].map(d => `<button class="chip ${d === this.dur ? 'sel' : ''}" data-d="${d}">${d}s</button>`).join('')}</div>
+        <span class="lab">BEST ${best ? `<b style="color:var(--amber)">${best.correct}</b> · ${fmtMs(best.avg)} AVG` : '—'}</span>
+      </div>`;
+    $$('#sDur .chip', this.el).forEach(b => b.onclick = () => { this.dur = +b.dataset.d; Store.set('speedDur', this.dur); this.renderIdle(); });
+    $('#sStart', this.el).onclick = () => this.countdown();
+  },
+  countdown() {
+    this.state = 'count';
+    Input.reset();
+    this.el.innerHTML = `<div class="prompt"><div class="tgt" id="sTgt">3</div><div class="grow"><div class="lab">GET READY</div><div class="fb">Letters appear in the amber box. Go fast — but accurate.</div></div></div><div class="timer"><i style="width:100%"></i></div>`;
+    this.cd = [];
+    [3, 2, 1].forEach((n, i) => this.cd.push(setTimeout(() => {
+      const t = $('#sTgt'); if (!t) return;
+      t.textContent = n; t.classList.remove('enter'); void t.offsetWidth; t.classList.add('enter');
+      Sound.tick(900); Haptics.light();
+    }, i * 650)));
+    this.cd.push(setTimeout(() => { Sound.tick(1600); this.run(); }, 3 * 650));
+  },
+  run() {
+    Object.assign(this, { state: 'run', correct: 0, wrong: 0, streak: 0, bestStreak: 0, times: [], fastest: null });
+    this.endAt = now() + this.dur * 1000;
+    this.el.innerHTML = `
+      <div class="prompt">
+        <div class="tgt" id="sTgt">?</div>
+        <div class="grow">
+          <div class="row between"><span class="lab">SEND</span><span class="big-num" id="sClock" style="font-size:20px">${fmtClock(this.dur * 1000)}</span></div>
+          <div class="hint" id="sHint"></div>
+          <div class="timer" id="sTimer"><i></i></div>
+        </div>
+      </div>
+      <div class="statgrid">
+        <div class="stat"><b id="sC">0</b><span>RIGHT</span></div>
+        <div class="stat"><b id="sW">0</b><span>MISS</span></div>
+        <div class="stat" id="sStkBox"><b id="sStk">0</b><span>STREAK</span></div>
+        <div class="stat"><b id="sBs">0</b><span>BEST</span></div>
+        <div class="stat"><b id="sAvg">—</b><span>AVG</span></div>
+        <div class="stat"><b id="sFast">—</b><span>FAST</span></div>
+      </div>`;
+    this.next();
+    this.iv = setInterval(() => this.tick(), 100);
+  },
+  tick() {
+    const left = this.endAt - now();
+    const bar = $('#sTimer'); if (!bar) return;
+    bar.firstChild.style.width = clamp(left / (this.dur * 1000), 0, 1) * 100 + '%';
+    bar.classList.toggle('low', left < 5000);
+    $('#sClock').textContent = fmtClock(left);
+    if (left <= 0) this.finish();
+  },
+  next() {
+    this.target = pickLetter(LETTERS, this.target);
+    this.promptAt = now();
+    const t = $('#sTgt'); t.textContent = this.target; t.classList.remove('enter', 'ok'); void t.offsetWidth; t.classList.add('enter');
+    const h = $('#sHint'), beginner = settings.level === 'beginner';
+    h.className = 'hint' + (beginner ? '' : ' hidden');
+    h.textContent = beginner ? glyph(MORSE[this.target]) : '';
+    Tree.setTarget(beginner ? MORSE[this.target] : null);
+  },
+  renderStats() {
+    const a = avg(this.times);
+    $('#sC').textContent = this.correct; $('#sW').textContent = this.wrong;
+    $('#sStk').textContent = this.streak; $('#sBs').textContent = this.bestStreak;
+    $('#sStkBox').classList.toggle('hot', this.streak >= 5);
+    $('#sAvg').textContent = a ? (a / 1000).toFixed(2) : '—';
+    $('#sFast').textContent = this.fastest ? (this.fastest / 1000).toFixed(2) : '—';
+  },
+  onLetter(seq, ch) {
+    if (this.state !== 'run') return null;
+    if (seq === MORSE[this.target]) {
+      // Response time: prompt shown → last symbol released (excludes the letter-pause wait).
+      const rt = Math.max(0, Input.lastSymbolAt - this.promptAt);
+      this.times.push(rt);
+      this.fastest = this.fastest == null ? rt : Math.min(this.fastest, rt);
+      this.correct++; this.streak++; this.bestStreak = Math.max(this.bestStreak, this.streak);
+      Stats.recordLetter(this.target, true);
+      Sound.success(); Haptics.success(); UI.fx('ok');
+      this.renderStats(); this.next();
+      return true;
+    }
+    this.wrong++; this.streak = 0;
+    Stats.recordLetter(this.target, false);
+    Sound.error(); Haptics.error(); UI.fx('bad');
+    const h = $('#sHint'); h.className = 'hint'; h.style.color = 'var(--bad)';
+    h.textContent = ch ? `sent ${ch} — try again` : 'unknown — try again';
+    // Keep the same letter; restore the hint after a beat.
+    clearTimeout(this._ht);
+    this._ht = setTimeout(() => {
+      if (this.state !== 'run' || !h.isConnected) return;
+      const beginner = settings.level === 'beginner';
+      h.style.color = ''; h.className = 'hint' + (beginner ? '' : ' hidden'); h.textContent = beginner ? glyph(MORSE[this.target]) : '';
+    }, 700);
+    this.renderStats();
+    return false;
+  },
+  finish() {
+    this.stopTimers();
+    this.state = 'done';
+    Tree.setTarget(null);
+    Input.reset();
+    const a = avg(this.times);
+    const prev = Stats.speedBest[this.dur];
+    const isBest = !prev || this.correct > prev.correct;
+    if (isBest && this.correct > 0) Stats.speedBest[this.dur] = { correct: this.correct, bestStreak: this.bestStreak, avg: a, fastest: this.fastest };
+    Stats.save();
+    const acc = this.correct + this.wrong ? Math.round(this.correct / (this.correct + this.wrong) * 100) : 0;
+    this.el.innerHTML = `
+      <div class="row between">
+        <div>
+          <div class="done-title">${isBest && this.correct ? 'NEW BEST!' : 'TIME!'}</div>
+          <div class="fb" style="margin-top:6px">${this.correct} letters · ${acc}% accuracy · best streak ${this.bestStreak}</div>
+          <div class="fb">avg ${fmtMs(a)} · fastest ${fmtMs(this.fastest)}</div>
+        </div>
+        <div class="row"><button class="mini ghost" id="sBack">DONE</button><button class="mini primary" id="sAgain">${ICON.restart}AGAIN</button></div>
+      </div>`;
+    if (isBest && this.correct) { Sound.fanfare(); Haptics.success(); UI.fx('ok'); } else Sound.tick(700);
+    $('#sAgain', this.el).onclick = () => this.countdown();
+    $('#sBack', this.el).onclick = () => this.renderIdle();
+  }
+};
+
+/* ----- Shared phrase runner (Practice + Challenge transmit) ----- */
+function buildItems(text) {
+  return text.toUpperCase().replace(/\s+/g, ' ').trim().split('').map(c => ({ c, code: c === ' ' ? null : (MORSE[c] || null) }));
+}
+function nextPlayable(items, from) {
+  for (let i = from; i < items.length; i++) if (items[i].code) return i;
+  return -1;
+}
+function phraseCells(items, idx, hideFuture) {
+  return items.map((it, i) => {
+    if (it.c === ' ') return '<span class="pc sp"></span>';
+    const cls = !it.code ? 'skip' : i < idx ? 'done' : i === idx ? 'cur' : '';
+    const ch = hideFuture && i >= idx && it.code ? (i === idx ? '?' : '·') : esc(it.c);
+    return `<span class="pc ${cls}">${ch}</span>`;
+  }).join('');
+}
+
+/* ----- PRACTICE ----- */
+const Practice = {
+  id: 'practice', label: 'PRACTICE', autoSpace: false,
+  phrase: Store.get('practicePhrase', 'HELP'),
+  state: 'idle',
+  enter(el) { this.el = el; this.state === 'run' ? this.renderRun() : this.renderIdle(); },
+  exit() { Tree.setTarget(null); },
+  renderIdle() {
+    this.state = 'idle'; Tree.setTarget(null);
+    this.el.innerHTML = `
+      <div class="lab">TYPE A WORD OR PHRASE TO SEND</div>
+      <div class="row" style="margin-top:8px">
+        <input class="txt grow" id="pIn" maxlength="80" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" value="${esc(this.phrase)}" enterkeyhint="go">
+        <button class="mini primary" id="pGo" style="height:40px">${ICON.play}GO</button>
+      </div>
+      <div class="chips" style="margin-top:8px">${['SOS', 'HELP', 'HELLO WORLD', 'CQ DX'].map(p => `<button class="chip" data-p="${p}">${p}</button>`).join('')}</div>`;
+    const inp = $('#pIn', this.el);
+    const go = () => { inp.blur(); this.start(inp.value); };
+    $('#pGo', this.el).onclick = go;
+    inp.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); go(); } });
+    $$('.chip', this.el).forEach(b => b.onclick = () => { inp.value = b.dataset.p; go(); });
+  },
+  start(text) {
+    const items = buildItems(text || '');
+    if (nextPlayable(items, 0) < 0) { UI.toast('Enter letters or numbers to practise'); return; }
+    this.phrase = text.toUpperCase().trim(); Store.set('practicePhrase', this.phrase);
+    Object.assign(this, { items, idx: nextPlayable(items, 0), mistakes: 0, t0: now(), state: 'run', hint: false });
+    Input.reset();
+    this.renderRun();
+  },
+  renderRun() {
+    this.el.innerHTML = `
+      <div class="prompt">
+        <div class="tgt small" id="pTgt"></div>
+        <div class="grow">
+          <div class="row between"><span class="lab" id="pProg"></span>
+            <div class="row"><button class="mini ghost" id="pHint" aria-label="Hint">${ICON.bulb}</button><button class="mini ghost" id="pEdit" aria-label="Edit phrase">${ICON.edit}</button></div></div>
+          <div class="hint" id="pCode"></div>
+        </div>
+      </div>
+      <div class="phrase" id="pCells"></div>
+      <div class="fb" id="pFb"></div>`;
+    $('#pEdit', this.el).onclick = () => this.renderIdle();
+    $('#pHint', this.el).onclick = () => {
+      const it = this.items[this.idx]; if (!it) return;
+      this.hint = true; this.update();
+      Transmitter.play(it.c, { onSymbol: s => Tree.setPath(s), onDone: () => setTimeout(() => !Input.seq && Tree.setPath(''), 400) });
+    };
+    this.update();
+  },
+  update() {
+    const it = this.items[this.idx];
+    const total = this.items.filter(i => i.code).length, done = this.items.slice(0, this.idx).filter(i => i.code).length;
+    $('#pCells').innerHTML = phraseCells(this.items, this.idx, false);
+    const cur = $('#pCells .cur'); if (cur) cur.scrollIntoView({ block: 'nearest', inline: 'center' });
+    $('#pProg').textContent = `LETTER ${Math.min(done + 1, total)} OF ${total}`;
+    if (!it) return;
+    const show = settings.level === 'beginner' || this.hint;
+    $('#pTgt').textContent = it.c;
+    const code = $('#pCode');
+    code.className = 'hint' + (show ? '' : ' hidden');
+    code.textContent = show ? `${it.c} = ${glyph(it.code)}` : `${it.c} = ? — FROM MEMORY`;
+    Tree.setTarget(show ? it.code : null);
+  },
+  onLetter(seq, ch) {
+    if (this.state !== 'run') return null;
+    const it = this.items[this.idx];
+    const fb = $('#pFb');
+    if (seq === it.code) {
+      Stats.recordLetter(it.c, true);
+      this.hint = false;
+      this.idx = nextPlayable(this.items, this.idx + 1);
+      if (this.idx < 0) { this.finish(); return true; }
+      Sound.success(); Haptics.success(); UI.fx('ok');
+      fb.className = 'fb ok'; fb.textContent = `✓ ${it.c}`;
+      const t = $('#pTgt'); t.classList.remove('enter'); void t.offsetWidth; t.classList.add('enter');
+      this.update();
+      return true;
+    }
+    this.mistakes++; Stats.recordLetter(it.c, false);
+    Sound.error(); Haptics.error(); UI.fx('bad');
+    fb.className = 'fb bad'; fb.textContent = ch ? `You sent ${ch} (${glyph(seq)}). Try ${it.c} again.` : `${glyph(seq)} isn't a letter. Try again.`;
+    return false;
+  },
+  finish() {
+    this.state = 'done'; Stats.save(); Tree.setTarget(null);
+    const ms = now() - this.t0;
+    Sound.fanfare(); Haptics.success(); UI.fx('ok');
+    this.el.innerHTML = `
+      <div class="row between">
+        <div class="grow">
+          <div class="done-title">PHRASE SENT</div>
+          <div class="fb" style="margin-top:6px;font-family:var(--mono);color:var(--text)">${esc(this.phrase)}</div>
+          <div class="fb">${fmtClock(ms)} · ${this.mistakes} mistake${this.mistakes === 1 ? '' : 's'}</div>
+        </div>
+        <div class="row"><button class="mini ghost" id="pNew">NEW</button><button class="mini primary" id="pRe">${ICON.restart}AGAIN</button></div>
+      </div>`;
+    $('#pNew', this.el).onclick = () => this.renderIdle();
+    $('#pRe', this.el).onclick = () => this.start(this.phrase);
+  }
+};
+
+/* ----- CHALLENGE ----- */
+/* A challenge = { title, phrase, type: 'transmit' | 'decode', reward }.
+   Shareable via URL hash (#c=...) so a leader can text a link to a group. */
+const b64e = s => btoa(String.fromCharCode(...new TextEncoder().encode(s))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const b64d = s => new TextDecoder().decode(Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), c => c.charCodeAt(0)));
+
+const Challenge = {
+  id: 'challenge', label: 'CHALLENGE', autoSpace: false,
+  def: null, state: 'none',
+  enter(el) {
+    this.el = el;
+    if (this.state === 'run') this.renderRun();
+    else if (this.def) this.renderReady();
+    else this.renderNone();
+  },
+  exit() { Tree.setTarget(null); Transmitter.stop(); },
+  renderNone() {
+    this.state = 'none'; Tree.setTarget(null);
+    const n = Store.get('challenges', []).length;
+    this.el.innerHTML = `
+      <div class="row between">
+        <div class="grow">
+          <div class="lab">CHALLENGE MODE</div>
+          <div class="fb" style="margin-top:6px">Create a secret phrase for a game, hunt, escape room or verse challenge.</div>
+        </div>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button class="mini primary" id="cNew">${ICON.edit}CREATE</button>
+        <button class="mini" id="cSaved">SAVED (${n})</button>
+      </div>`;
+    $('#cNew', this.el).onclick = () => this.openEditor();
+    $('#cSaved', this.el).onclick = () => this.openEditor(null, true);
+  },
+  renderReady() {
+    this.state = 'ready'; Tree.setTarget(null);
+    const d = this.def;
+    const letters = buildItems(d.phrase).filter(i => i.code).length;
+    this.el.innerHTML = `
+      <div class="row between">
+        <div class="grow" style="min-width:0">
+          <div class="lab">${d.type === 'decode' ? 'DECODE CHALLENGE' : 'TRANSMIT CHALLENGE'}</div>
+          <div style="font:800 17px/1.25 var(--sans);margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(d.title || 'Secret Message')}</div>
+          <div class="fb">${letters} characters · ${d.type === 'decode' ? 'read the Morse, type each letter' : 'send each letter on the key'}</div>
+        </div>
+        <div class="row" style="flex-direction:column;align-items:stretch">
+          <button class="mini primary" id="cGo">${ICON.play}START</button>
+          <button class="mini ghost" id="cEdit">${ICON.edit}EDIT</button>
+        </div>
+      </div>`;
+    $('#cGo', this.el).onclick = () => this.start();
+    $('#cEdit', this.el).onclick = () => this.openEditor(this.def);
+  },
+  start() {
+    const items = buildItems(this.def.phrase);
+    Object.assign(this, { items, idx: nextPlayable(items, 0), mistakes: 0, hints: 0, t0: now(), state: 'run' });
+    Input.reset();
+    this.renderRun();
+  },
+  renderRun() {
+    const d = this.def, decodeMode = d.type === 'decode';
+    this.el.innerHTML = decodeMode ? `
+      <div class="row between">
+        <div class="grow" style="min-width:0">
+          <div class="row between"><span class="lab" id="cProg"></span><button class="mini ghost" id="cExit">EXIT</button></div>
+          <div class="hint" id="cCode" style="font-size:26px;margin-top:4px"></div>
+        </div>
+      </div>
+      <div class="row" style="margin-top:6px">
+        <input class="ansinput" id="cAns" maxlength="1" autocomplete="off" autocorrect="off" autocapitalize="characters" spellcheck="false" aria-label="Your answer" placeholder="?">
+        <button class="mini" id="cPlay">${ICON.play}PLAY</button>
+        <button class="mini ghost" id="cReveal">${ICON.bulb}REVEAL</button>
+        <span class="fb grow" id="cFb" style="margin:0"></span>
+      </div>
+      <div class="phrase" id="cCells"></div>` : `
+      <div class="prompt">
+        <div class="tgt small" id="cTgt"></div>
+        <div class="grow">
+          <div class="row between"><span class="lab" id="cProg"></span>
+            <div class="row"><button class="mini ghost" id="cHint" aria-label="Hint">${ICON.bulb}</button><button class="mini ghost" id="cExit">EXIT</button></div></div>
+          <div class="hint hidden" id="cCode">SEND IT FROM MEMORY</div>
+        </div>
+      </div>
+      <div class="phrase" id="cCells"></div>
+      <div class="fb" id="cFb"></div>`;
+    $('#cExit', this.el).onclick = () => { Transmitter.stop(); this.renderReady(); };
+    if (decodeMode) {
+      const ans = $('#cAns', this.el);
+      ans.addEventListener('input', () => { const v = ans.value.toUpperCase(); ans.value = ''; if (v) this.answer(v); });
+      $('#cPlay', this.el).onclick = () => { const it = this.items[this.idx]; if (it) Transmitter.play(it.c); };
+      $('#cReveal', this.el).onclick = () => { const it = this.items[this.idx]; if (!it) return; this.hints++; this.mistakes++; UI.toast(`It was ${it.c}`); this.answer(it.c, true); };
+    } else {
+      $('#cHint', this.el).onclick = () => {
+        const it = this.items[this.idx]; if (!it) return; this.hints++;
+        $('#cCode').className = 'hint'; $('#cCode').textContent = `${it.c} = ${glyph(it.code)}`;
+        Tree.setTarget(it.code);
+      };
+    }
+    this.update();
+  },
+  update() {
+    const it = this.items[this.idx], d = this.def;
+    const total = this.items.filter(i => i.code).length, done = this.items.slice(0, this.idx).filter(i => i.code).length;
+    $('#cProg').textContent = `${esc(d.title || 'SECRET').toUpperCase().slice(0, 18)} · ${Math.min(done + 1, total)}/${total}`;
+    $('#cCells').innerHTML = phraseCells(this.items, this.idx, d.type === 'decode');
+    const cur = $('#cCells .cur'); if (cur) cur.scrollIntoView({ block: 'nearest', inline: 'center' });
+    if (!it) return;
+    if (d.type === 'decode') {
+      $('#cCode').textContent = glyph(it.code);
+    } else {
+      $('#cTgt').textContent = it.c;
+      const c = $('#cCode'); c.className = 'hint hidden'; c.textContent = 'SEND IT FROM MEMORY';
+      Tree.setTarget(null);
+    }
+  },
+  advance() {
+    this.idx = nextPlayable(this.items, this.idx + 1);
+    if (this.idx < 0) { this.finish(); return; }
+    this.update();
+  },
+  /** Decode challenge: typed answer. */
+  answer(v, revealed) {
+    const it = this.items[this.idx]; if (!it) return;
+    const fb = $('#cFb');
+    if (v === it.c) {
+      if (!revealed) { Sound.success(); Haptics.success(); UI.fx('ok'); }
+      fb.className = 'fb grow ok'; fb.textContent = `✓ ${it.c}`;
+      this.advance();
+    } else {
+      this.mistakes++; Sound.error(); Haptics.error(); UI.fx('bad');
+      fb.className = 'fb grow bad'; fb.textContent = `Not ${v}`;
+    }
+  },
+  /** Transmit challenge: keyed letter. In decode challenges the key is free play (neutral). */
+  onLetter(seq, ch) {
+    if (this.state !== 'run' || this.def.type !== 'transmit') return null;
+    const it = this.items[this.idx], fb = $('#cFb');
+    if (seq === it.code) {
+      Sound.success(); Haptics.success(); UI.fx('ok');
+      fb.className = 'fb ok'; fb.textContent = `✓ ${it.c}`;
+      this.advance();
+      return true;
+    }
+    this.mistakes++; Sound.error(); Haptics.error(); UI.fx('bad');
+    fb.className = 'fb bad'; fb.textContent = ch ? `That was ${ch}. Try again.` : `Unknown pattern. Try again.`;
+    return false;
+  },
+  finish() {
+    this.state = 'done'; Tree.setTarget(null);
+    const ms = now() - this.t0, d = this.def;
+    Sound.fanfare(); Haptics.success(); UI.fx('ok');
+    this.el.innerHTML = `
+      <div class="row between">
+        <div class="grow" style="min-width:0">
+          <div class="done-title">CHALLENGE COMPLETE</div>
+          <div class="fb" style="margin-top:6px;font-family:var(--mono);color:var(--text)">${esc(d.phrase.toUpperCase())}</div>
+          <div class="fb">${fmtClock(ms)} · ${this.mistakes} mistake${this.mistakes === 1 ? '' : 's'}${this.hints ? ` · ${this.hints} hint${this.hints === 1 ? '' : 's'}` : ''}</div>
+        </div>
+        <button class="mini primary" id="cAgain">${ICON.restart}AGAIN</button>
+      </div>
+      ${d.reward ? `<div class="reward">${esc(d.reward)}</div>` : ''}`;
+    $('#cAgain', this.el).onclick = () => this.renderReady();
+  },
+  load(def, quiet) {
+    this.def = { title: (def.title || '').slice(0, 60), phrase: (def.phrase || '').slice(0, 200), type: def.type === 'decode' ? 'decode' : 'transmit', reward: (def.reward || '').slice(0, 400) };
+    this.state = 'ready';
+    if (Modes.current === this) this.renderReady();
+    if (!quiet) UI.toast('Challenge loaded');
+  },
+  shareUrl(def) {
+    const payload = b64e(JSON.stringify({ t: def.title, p: def.phrase, y: def.type, r: def.reward }));
+    return location.href.split('#')[0] + '#c=' + payload;
+  },
+
+  /** Setup sheet: create / edit / share / saved list. */
+  openEditor(def, jumpToSaved) {
+    const d = def || { title: '', phrase: '', type: 'transmit', reward: '' };
+    const saved = Store.get('challenges', []);
+    UI.openSheet('CHALLENGE SETUP', `
+      <div class="group">
+        <h3>SECRET PHRASE</h3>
+        <div class="field">
+          <label class="flabel" for="ceTitle">Title (players see this)</label>
+          <input class="txt" id="ceTitle" style="text-transform:none;font-family:var(--sans);margin-top:8px" maxlength="60" placeholder="e.g. Clue #3" value="${esc(d.title)}">
+          <label class="flabel" for="cePhrase" style="display:block;margin-top:12px">Phrase (letters, numbers, spaces)</label>
+          <input class="txt" id="cePhrase" style="margin-top:8px" maxlength="200" autocomplete="off" autocorrect="off" spellcheck="false" placeholder="e.g. JOHN 3 16" value="${esc(d.phrase)}">
+          <p id="ceWarn"></p>
+        </div>
+        <div class="field">
+          <span class="flabel">Challenge type</span>
+          <div class="seg" id="ceType">
+            <button data-v="transmit">TRANSMIT</button><button data-v="decode">DECODE</button>
+          </div>
+          <p id="ceTypeHelp"></p>
+        </div>
+        <div class="field">
+          <label class="flabel" for="ceReward">Reward message (shown when solved)</label>
+          <textarea class="txt" id="ceReward" style="margin-top:8px" maxlength="400" placeholder="e.g. Your next clue is under the piano.">${esc(d.reward)}</textarea>
+        </div>
+        <button class="btnwide primary" id="ceStart">LOAD CHALLENGE</button>
+        <div class="row" style="gap:8px">
+          <button class="btnwide" id="ceSave">SAVE</button>
+          <button class="btnwide" id="ceShare">SHARE LINK</button>
+        </div>
+      </div>
+      <div class="group" id="ceSavedGroup">
+        <h3>SAVED CHALLENGES</h3>
+        <div id="ceSaved"></div>
+      </div>`, body => {
+      let type = d.type;
+      const syncType = () => {
+        $$('#ceType button', body).forEach(b => b.classList.toggle('sel', b.dataset.v === type));
+        $('#ceTypeHelp', body).textContent = type === 'transmit'
+          ? 'Players see the phrase and must key every letter correctly — no hints shown.'
+          : 'The phrase stays hidden. Players see/hear each letter in Morse and type what it is.';
+      };
+      $$('#ceType button', body).forEach(b => b.onclick = () => { type = b.dataset.v; syncType(); });
+      syncType();
+      const phraseEl = $('#cePhrase', body);
+      const warn = () => {
+        const bad = [...new Set(phraseEl.value.toUpperCase().split('').filter(c => !sendable(c)))];
+        $('#ceWarn', body).textContent = bad.length ? `Skipped (no Morse): ${bad.join(' ')}` : '';
+      };
+      phraseEl.addEventListener('input', warn); warn();
+      const read = () => ({ title: $('#ceTitle', body).value.trim(), phrase: phraseEl.value.trim().toUpperCase(), type, reward: $('#ceReward', body).value.trim() });
+      const valid = c => { if (nextPlayable(buildItems(c.phrase), 0) < 0) { UI.toast('Enter a phrase with letters or numbers'); return false; } return true; };
+      $('#ceStart', body).onclick = () => { const c = read(); if (!valid(c)) return; this.load(c, true); UI.closeSheet(); UI.toast('Ready — hand the phone over!'); };
+      $('#ceSave', body).onclick = () => {
+        const c = read(); if (!valid(c)) return;
+        const list = Store.get('challenges', []);
+        const i = list.findIndex(x => x.phrase === c.phrase && x.title === c.title);
+        if (i >= 0) list[i] = c; else list.unshift(c);
+        Store.set('challenges', list.slice(0, 40)); renderSaved(); UI.toast('Saved on this device');
+      };
+      $('#ceShare', body).onclick = async () => {
+        const c = read(); if (!valid(c)) return;
+        const url = this.shareUrl(c);
+        if (navigator.share) { try { await navigator.share({ title: c.title || 'Morse Challenge', url }); return; } catch (e) { if (e && e.name === 'AbortError') return; } }
+        const ok = await copyText(url);
+        UI.toast(ok ? 'Challenge link copied' : 'Could not copy link');
+      };
+      const renderSaved = () => {
+        const list = Store.get('challenges', []);
+        $('#ceSaved', body).innerHTML = list.length ? list.map((c, i) => `
+          <div class="saved"><div class="grow"><b>${esc(c.title || 'Untitled')}</b><span>${c.type.toUpperCase()} · ${esc(c.phrase.slice(0, 28))}${c.phrase.length > 28 ? '…' : ''}</span></div>
+          <button class="mini" data-load="${i}">LOAD</button><button class="mini ghost" data-del="${i}" aria-label="Delete">${ICON.trash}</button></div>`).join('')
+          : '<p class="help">No saved challenges yet.</p>';
+        $$('[data-load]', body).forEach(b => b.onclick = () => { this.load(list[+b.dataset.load], true); UI.closeSheet(); UI.toast('Challenge loaded'); });
+        $$('[data-del]', body).forEach(b => b.onclick = () => { list.splice(+b.dataset.del, 1); Store.set('challenges', list); renderSaved(); });
+      };
+      renderSaved();
+      if (jumpToSaved) setTimeout(() => $('#ceSavedGroup', body).scrollIntoView({ behavior: 'smooth' }), 300);
+      void saved;
+    });
+  }
+};
+
+/* ----- Mode registry ----- */
+const Modes = {
+  list: { explore: Explore, learn: Learn, speed: Speed, decode: Decode, practice: Practice, challenge: Challenge },
+  order: ['explore', 'learn', 'speed', 'decode', 'practice', 'challenge'],
+  current: null,
+  set(id) {
+    if (!this.list[id]) id = 'explore';
+    if (this.current) { try { this.current.exit && this.current.exit(); } catch (e) { console.error(e); } }
+    Transmitter.stop();
+    Input.reset();
+    Tree.setTarget(null);
+    this.current = this.list[id];
+    document.body.dataset.mode = id;
+    UI.els.modeName.textContent = this.current.label + ' MODE';
+    $$('#tabs .tab').forEach(t => { const a = t.dataset.mode === id; t.classList.toggle('active', a); t.setAttribute('aria-selected', a); if (a) t.scrollIntoView({ block: 'nearest', inline: 'nearest' }); });
+    const scr = UI.els.screen;
+    scr.innerHTML = '';
+    this.current.enter(scr);
+    Store.set('mode', id);
+    Bus.emit('mode', { id });
+  }
+};
+
+/* =====================================================================
+   11. SETTINGS + CALIBRATION
+   ===================================================================== */
+function applySettings() {
+  document.body.classList.toggle('adv', settings.level === 'advanced');
+  Sound.applySettings();
+  Tree.applyLayout();
+  const sb = $('#btnSound'); sb.innerHTML = settings.sound ? ICON.soundOn : ICON.soundOff; sb.classList.toggle('lit', settings.sound); sb.classList.toggle('off', !settings.sound);
+  const hb = $('#btnHaptic'); hb.innerHTML = ICON.haptic; hb.classList.toggle('lit', settings.haptics); hb.classList.toggle('off', !settings.haptics);
+  UI.els.padsub.textContent = `TAP < ${settings.threshold}ms = •  ·  HOLD = —`;
+  // Re-render prompts whose hints depend on level
+  const m = Modes.current;
+  if (m === Learn && Learn.target) Learn.renderHint();
+  if (m === Practice && Practice.state === 'run') Practice.update();
+  if (m === Speed && Speed.state === 'run') { const b = settings.level === 'beginner'; Tree.setTarget(b ? MORSE[Speed.target] : null); }
+  Tree.setPath(Input.seq);
+}
+
+function rangeField(key, label, min, max, step, unit, help) {
+  return `<div class="field">
+    <div class="row"><label class="flabel" for="r_${key}">${label}</label><span class="val" id="v_${key}">${settings[key]}${unit}</span></div>
+    <input type="range" id="r_${key}" data-key="${key}" data-unit="${unit}" min="${min}" max="${max}" step="${step}" value="${settings[key]}">
+    ${help ? `<p>${help}</p>` : ''}</div>`;
+}
+function switchField(key, label, help) {
+  return `<div class="field"><div class="row"><span class="flabel">${label}</span>
+    <button class="sw" role="switch" data-sw="${key}" aria-checked="${!!settings[key]}" aria-label="${label}"></button></div>${help ? `<p>${help}</p>` : ''}</div>`;
+}
+function paintRange(r) { const p = (r.value - r.min) / (r.max - r.min) * 100; r.style.setProperty('--p', p + '%'); }
+
+function openSettings() {
+  const dots = avg(Stats.presses.dot), dashes = avg(Stats.presses.dash);
+  UI.openSheet('SETTINGS', `
+    <div class="group"><h3>TIMING</h3>
+      ${rangeField('threshold', 'Dot / dash threshold', 100, 600, 10, 'ms', `Press shorter than this = dot, longer = dash. ${dots ? `Your recent dots avg <b style="color:var(--on-hi)">${Math.round(dots)}ms</b>` : ''}${dashes ? `, dashes <b style="color:var(--on-hi)">${Math.round(dashes)}ms</b>.` : ''}`)}
+      ${rangeField('letterPause', 'End-of-letter pause', 300, 2000, 50, 'ms', 'Silence after your last dot/dash before the letter is committed.')}
+      ${rangeField('wordPause', 'End-of-word pause', 800, 4000, 100, 'ms', 'Silence before a word space is added automatically (Explore & Decode).')}
+      ${switchField('autoSpace', 'Automatic word spaces')}
+      <button class="btnwide primary" id="stCal">CALIBRATE MY TIMING</button>
+    </div>
+    <div class="group"><h3>TRAINING LEVEL</h3>
+      <div class="field"><span class="flabel">Mode</span>
+        <div class="seg" id="stLevel"><button data-v="beginner">BEGINNER</button><button data-v="advanced">ADVANCED</button></div>
+        <p>Beginner shows Morse hints, branch labels and the target route. Advanced hides letters you haven't reached so you work from memory.</p></div>
+      ${switchField('showNumbers', 'Show numbers layer (0–9) in tree')}
+    </div>
+    <div class="group"><h3>FEEDBACK</h3>
+      ${switchField('sound', 'Sound', 'No sound on iPhone? Check the silent switch and volume.')}
+      ${rangeField('toneHz', 'Tone pitch', 400, 1000, 10, 'Hz')}
+      ${rangeField('volume', 'Volume', 0.1, 1, 0.05, '')}
+      ${switchField('haptics', 'Haptics', Haptics.hasVibrate ? 'Dot = short buzz, dash = long buzz, patterns for right/wrong.' : 'iPhone Safari offers limited haptics (single ticks on iOS 18+).')}
+      ${rangeField('wpm', 'Playback speed (hints)', 5, 30, 1, ' wpm')}
+    </div>
+    <div class="group"><h3>HOW TO USE</h3>
+      <div class="field help">
+        <b>Tap</b> the pad for a dot, <b>hold</b> it for a dash. Pause and the letter is decoded. Watch your route light up through the tree: dots branch <b>left</b>, dashes branch <b>right</b>.<br><br>
+        <b>Keyboard:</b> <kbd>Space</kbd> is the key, <kbd>.</kbd> / <kbd>-</kbd> add symbols, <kbd>Enter</kbd> commits, <kbd>/</kbd> word space, <kbd>⌫</kbd> backspace, <kbd>Esc</kbd> clears.<br><br>
+        <b>Hold CLR</b> to wipe the whole message.<br><br>
+        <b>Install:</b> iPhone — Share → <i>Add to Home Screen</i>. Android — menu → <i>Install app</i>.
+      </div>
+    </div>
+    <div class="group"><h3>DATA</h3>
+      <div class="field help">Learn best streak: <b>${Stats.learnBestStreak}</b> · Letters practised: <b>${Stats.learnTotal}</b><br>
+      Speed bests: ${[30, 60, 120].map(d => `${d}s <b>${Stats.speedBest[d] ? Stats.speedBest[d].correct : '—'}</b>`).join(' · ')}</div>
+      <button class="btnwide danger" id="stReset">RESET SCORES</button>
+      <button class="btnwide" id="stDefaults">RESTORE DEFAULT SETTINGS</button>
+    </div>`, body => {
+    $$('input[type=range]', body).forEach(r => {
+      paintRange(r);
+      r.addEventListener('input', () => {
+        const k = r.dataset.key; let v = +r.value;
+        settings[k] = v;
+        if (k === 'letterPause' && settings.wordPause < v + 300) { settings.wordPause = Math.ceil((v + 300) / 100) * 100; const w = $('#r_wordPause', body); w.value = settings.wordPause; paintRange(w); $('#v_wordPause', body).textContent = settings.wordPause + 'ms'; }
+        if (k === 'wordPause' && v < settings.letterPause + 300) { v = settings.wordPause = Math.ceil((settings.letterPause + 300) / 100) * 100; r.value = v; }
+        $('#v_' + k, body).textContent = (k === 'volume' ? Math.round(v * 100) + '%' : v + r.dataset.unit);
+        paintRange(r);
+        saveSettings();
+      });
+      if (r.dataset.key === 'volume') $('#v_volume', body).textContent = Math.round(settings.volume * 100) + '%';
+      if (r.dataset.key === 'toneHz' || r.dataset.key === 'volume') r.addEventListener('change', () => Sound.symbol('.'));
+    });
+    $$('[data-sw]', body).forEach(b => b.onclick = () => {
+      const k = b.dataset.sw; settings[k] = !settings[k]; b.setAttribute('aria-checked', settings[k]); saveSettings();
+      if (k === 'haptics' && settings.haptics) Haptics.light();
+      if (k === 'sound' && settings.sound) Sound.success();
+    });
+    const syncLevel = () => $$('#stLevel button', body).forEach(b => b.classList.toggle('sel', b.dataset.v === settings.level));
+    $$('#stLevel button', body).forEach(b => b.onclick = () => { settings.level = b.dataset.v; syncLevel(); saveSettings(); });
+    syncLevel();
+    $('#stCal', body).onclick = () => Calibrate.open();
+    let armed = false;
+    $('#stReset', body).onclick = e => {
+      if (!armed) { armed = true; e.target.textContent = 'TAP AGAIN TO CONFIRM'; setTimeout(() => { armed = false; e.target.textContent = 'RESET SCORES'; }, 2500); return; }
+      Object.assign(Stats, { learnBestStreak: 0, learnTotal: 0, speedBest: {}, letters: {}, presses: { dot: [], dash: [] } }); Stats.save();
+      e.target.textContent = 'SCORES RESET'; UI.toast('Scores reset');
+    };
+    $('#stDefaults', body).onclick = () => { Object.assign(settings, DEFAULTS); saveSettings(); openSettings(); UI.toast('Defaults restored'); };
+  });
+}
+
+/** Calibration: 5 quick taps + 5 long holds → midpoint threshold. */
+const Calibrate = {
+  open() {
+    const taps = [], holds = [];
+    UI.openSheet('CALIBRATE', `
+      <div class="calstep" id="calStep">Tap quickly 5 times</div>
+      <div class="calnote" id="calNote">Use the same quick tap you'd use for a dot.</div>
+      <div class="pips" id="calPips">${'<i></i>'.repeat(10)}</div>
+      <section class="pad calpad" id="calPad"><span class="ms" id="calMs">0 ms</span><div class="core"><b>•</b></div><div class="padlabel">CALIBRATION PAD</div></section>
+      <div id="calResult"></div>`, body => {
+      const pad = $('#calPad', body); let t0 = 0, raf = 0, done = false;
+      const paint = () => $$('#calPips i', body).forEach((p, i) => { p.className = i < taps.length ? 'f' : (i - 5 < holds.length && i >= 5 ? 'f h' : ''); });
+      bindPress(pad, () => {
+        if (done) return;
+        t0 = now(); pad.classList.add('down'); Sound.toneOn();
+        const tick = () => { $('#calMs', body).textContent = Math.round(now() - t0) + ' ms'; raf = requestAnimationFrame(tick); }; tick();
+      }, () => {
+        if (done || !t0) return;
+        const ms = now() - t0; t0 = 0; cancelAnimationFrame(raf); pad.classList.remove('down'); Sound.toneOff(); Sound.init();
+        if (taps.length < 5) {
+          taps.push(ms); Haptics.symbol('.');
+          if (taps.length === 5) { $('#calStep', body).textContent = 'Now hold 5 times'; $('#calNote', body).textContent = 'Hold each press like a comfortable dash.'; }
+        } else if (holds.length < 5) {
+          holds.push(ms); Haptics.symbol('-');
+        }
+        paint();
+        if (holds.length === 5) finish();
+      }, () => { t0 = 0; cancelAnimationFrame(raf); pad.classList.remove('down'); Sound.toneOff(); });
+      const finish = () => {
+        done = true;
+        const at = avg(taps), ah = avg(holds);
+        if (ah <= at * 1.3) {
+          $('#calStep', body).textContent = 'Those were too similar';
+          $('#calNote', body).textContent = 'Make taps snappy and holds clearly longer, then try again.';
+          $('#calResult', body).innerHTML = '<button class="btnwide primary" id="calRetry">TRY AGAIN</button>';
+          $('#calRetry', body).onclick = () => Calibrate.open();
+          return;
+        }
+        // Midpoint between the slowest tap and the quickest hold, blended with the means.
+        const mid = (Math.max(...taps) + Math.min(...holds)) / 2 * 0.5 + (at + ah) / 2 * 0.5;
+        const th = clamp(Math.round(mid / 10) * 10, 100, 600);
+        $('#calStep', body).textContent = `Suggested threshold: ${th} ms`;
+        $('#calNote', body).textContent = `Your taps averaged ${Math.round(at)} ms, holds ${Math.round(ah)} ms.`;
+        $('#calResult', body).innerHTML = `<button class="btnwide primary" id="calApply">APPLY ${th} MS</button><button class="btnwide" id="calRetry">REDO</button>`;
+        $('#calApply', body).onclick = () => { settings.threshold = th; saveSettings(); Sound.success(); Haptics.success(); UI.closeSheet(); UI.toast(`Threshold set to ${th} ms`); };
+        $('#calRetry', body).onclick = () => Calibrate.open();
+      };
+    });
+  }
+};
+
+/* Clipboard helper with fallback for older Safari / non-secure contexts. */
+async function copyText(text) {
+  if (!text) return false;
+  try { await navigator.clipboard.writeText(text); return true; }
+  catch (e) {
+    const ta = document.createElement('textarea');
+    ta.value = text; ta.setAttribute('readonly', ''); ta.style.cssText = 'position:fixed;top:0;left:0;opacity:0;-webkit-user-select:text;user-select:text';
+    document.body.appendChild(ta); ta.select(); ta.setSelectionRange(0, text.length);
+    let ok = false; try { ok = document.execCommand('copy'); } catch (_) {}
+    ta.remove(); return ok;
+  }
+}
+
+/* =====================================================================
+   12. WIRING / BOOT
+   ===================================================================== */
+function isTyping(t) { return t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable); }
+
+/** Briefly animate a key button when triggered from the keyboard. */
+function flashKey(id) { const k = $(id); k.classList.add('hit'); setTimeout(() => k.classList.remove('hit'), 90); }
+
+function addButtonSymbol(sym) {
+  Sound.symbol(sym); Haptics.symbol(sym); UI.showInterp(sym);
+  Input.addSymbol(sym, 'button');
+}
+
+function boot() {
+  UI.init();
+  Haptics.setup();
+  Tree.build();
+
+  // Tabs
+  $('#tabs').innerHTML = Modes.order.map(id => `<button class="tab" role="tab" data-mode="${id}">${Modes.list[id].label}</button>`).join('');
+  $$('#tabs .tab').forEach(t => t.onclick = () => { if (Modes.current.id !== t.dataset.mode) { Sound.tick(); Modes.set(t.dataset.mode); } });
+
+  // Main key pad
+  bindPress($('#pad'), () => Keyer.down(), () => Keyer.up(), () => Keyer.cancel());
+
+  // Key row (click is fine here: touch-action:manipulation removes the 300ms delay)
+  $('#kDot').onclick = () => addButtonSymbol('.');
+  $('#kDash').onclick = () => addButtonSymbol('-');
+  $('#kSpace').onclick = () => { Input.wordSpace(); Haptics.light(); };
+  $('#kBack').onclick = () => { Input.backspace(); Haptics.light(); };
+  // CLR: tap = clear current letter; long-press (600ms) = clear entire message
+  (() => {
+    const k = $('#kClear'); let t = 0, long = false;
+    k.addEventListener('pointerdown', () => { long = false; t = setTimeout(() => { long = true; Input.clearLetter(); Modes.current.onClearAll ? Modes.current.onClearAll() : UI.toast('Nothing to clear'); Haptics.error(); }, 600); });
+    const stop = () => clearTimeout(t);
+    k.addEventListener('pointerup', stop); k.addEventListener('pointercancel', stop); k.addEventListener('pointerleave', stop);
+    k.addEventListener('contextmenu', e => e.preventDefault());
+    k.onclick = () => { if (long) return; if (Input.seq) Input.clearLetter(); else if (Modes.current.onClearAll) UI.toast('Hold CLR to clear the message'); Haptics.light(); };
+  })();
+
+  // Header buttons
+  $('#btnSound').onclick = () => { settings.sound = !settings.sound; saveSettings(); if (settings.sound) Sound.tick(1200); UI.toast(settings.sound ? 'Sound on' : 'Sound off', 900); };
+  $('#btnHaptic').onclick = () => { settings.haptics = !settings.haptics; saveSettings(); if (settings.haptics) Haptics.success(); UI.toast(settings.haptics ? 'Haptics on' : 'Haptics off', 900); };
+  $('#btnSettings').onclick = () => openSettings();
+  $('#sheetClose').onclick = () => UI.closeSheet();
+  $('#sheetBackdrop').onclick = () => UI.closeSheet();
+
+  // Keyboard support (desktop / Bluetooth keyboards)
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && UI.sheetOpen) { UI.closeSheet(); return; }
+    if (isTyping(e.target) || UI.sheetOpen || e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.code === 'Space') { e.preventDefault(); if (!e.repeat) Keyer.down(); return; }
+    if (e.repeat) return;
+    switch (e.key) {
+      case '.': addButtonSymbol('.'); flashKey('#kDot'); break;
+      case '-': case '_': addButtonSymbol('-'); flashKey('#kDash'); break;
+      case 'Enter': e.preventDefault(); Input.commit('manual'); break;
+      case '/': e.preventDefault(); Input.wordSpace(); flashKey('#kSpace'); break;
+      case 'Backspace': e.preventDefault(); Input.backspace(); flashKey('#kBack'); break;
+      case 'Escape': Input.clearLetter(); flashKey('#kClear'); break;
+    }
+  });
+  document.addEventListener('keyup', e => {
+    if (e.code === 'Space' && !isTyping(e.target)) { e.preventDefault(); Keyer.up(); }
+  });
+
+  // iOS: unlock audio on the first trusted touch; block pinch-zoom gestures.
+  const unlock = () => { if (settings.sound) Sound.init(); };
+  document.addEventListener('touchend', unlock, { capture: true, passive: true });
+  document.addEventListener('click', unlock, { capture: true });
+  document.addEventListener('gesturestart', e => e.preventDefault());
+  document.addEventListener('dblclick', e => e.preventDefault());
+
+  // Never leave a tone stuck on if the app is backgrounded mid-press.
+  document.addEventListener('visibilitychange', () => { if (document.hidden) { Keyer.cancel(); Transmitter.stop(); Sound.toneOff(); } });
+  window.addEventListener('blur', () => { Keyer.cancel(); Sound.toneOff(); });
+
+  applySettings();
+
+  // Challenge link? (#c=...)
+  let startMode = Store.get('mode', 'explore');
+  const m = location.hash.match(/[#&]c=([A-Za-z0-9_-]+)/);
+  if (m) {
+    try { const o = JSON.parse(b64d(m[1])); Challenge.load({ title: o.t, phrase: o.p, type: o.y, reward: o.r }, true); startMode = 'challenge'; }
+    catch (e) { console.warn('Bad challenge link', e); }
+  }
+  Modes.set(startMode);
+  UI.updateSeq();
+
+  if (!Stats.seenIntro) { setTimeout(() => UI.toast('Tap = dot  ·  Hold = dash  ·  Pause = letter', 3200), 500); Stats.seenIntro = true; Stats.save(); }
+
+  // Home-screen icon generated at runtime (used if icon-180.png isn't deployed).
+  try {
+    const c = document.createElement('canvas'); c.width = c.height = 180;
+    const g = c.getContext('2d');
+    const grd = g.createLinearGradient(0, 0, 0, 180); grd.addColorStop(0, '#0f2230'); grd.addColorStop(1, '#04080c');
+    g.fillStyle = grd; g.fillRect(0, 0, 180, 180);
+    g.shadowColor = '#38e8ff'; g.shadowBlur = 24; g.fillStyle = '#38e8ff';
+    g.beginPath(); g.arc(58, 90, 18, 0, Math.PI * 2); g.fill();
+    g.beginPath(); g.roundRect ? g.roundRect(92, 76, 52, 28, 14) : g.rect(92, 76, 52, 28); g.fill();
+    const link = $('#appleIcon');
+    fetch('icon-180.png', { method: 'HEAD' }).then(r => { if (!r.ok) link.href = c.toDataURL('image/png'); }).catch(() => { link.href = c.toDataURL('image/png'); });
+  } catch (e) {}
+
+  // Offline support when served over http(s) with sw.js alongside.
+  if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol)) {
+    navigator.serviceWorker.register('sw.js').catch(() => {});
+  }
+}
+
+boot();
+
+// Expose internals for debugging / future extensions (e.g. window.MorseApp.Bus.on('letter', ...)).
+window.MorseApp = { MORSE, decode, Bus, Input, Keyer, Tree, Modes, Transmitter, Sound, Haptics, settings };
+</script>
+</body>
+</html>
