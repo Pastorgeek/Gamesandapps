@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Photo Wall – Control Panel</title>
+<style>
+  :root { --bg: #0f0d1a; --card: #1b1830; --line: #2e2a4a; --text: #f1eefc; --muted: #a39dc4;
+    --accent: #ffcf3f; --pink: #ff5fa2; --ok: #3ddc97; --bad: #ff6b6b; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif; }
+  header { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    padding: 14px 24px; background: rgba(15,13,26,.92); backdrop-filter: blur(10px); border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 20px; margin: 0 auto 0 0; }
+  header h1 span { background: linear-gradient(90deg, var(--accent), var(--pink)); -webkit-background-clip: text;
+    background-clip: text; color: transparent; }
+  main { max-width: 1200px; margin: 0 auto; padding: 20px 24px 60px; display: grid; gap: 20px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 20px; }
+  .card h2 { margin: 0 0 4px; font-size: 18px; display: flex; align-items: center; gap: 8px; }
+  .card .sub { color: var(--muted); margin: 0 0 16px; font-size: 14px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  input[type=text], input[type=password], input[type=number], input[type=url] {
+    background: #110f20; border: 1px solid var(--line); color: var(--text); border-radius: 10px;
+    padding: 10px 12px; font-size: 15px; min-width: 0; }
+  input:focus { outline: 2px solid var(--accent); border-color: transparent; }
+  .grow { flex: 1 1 260px; }
+  button, .btn { border: 0; border-radius: 10px; padding: 10px 16px; font-size: 15px; font-weight: 600;
+    cursor: pointer; background: #2c2850; color: var(--text); text-decoration: none; white-space: nowrap; }
+  button:hover, .btn:hover { filter: brightness(1.2); }
+  button.primary { background: linear-gradient(90deg, var(--accent), var(--pink)); color: #1a1030; }
+  button:disabled { opacity: .5; cursor: default; }
+  .seg { display: inline-flex; background: #110f20; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .seg button { border-radius: 0; background: transparent; font-weight: 500; }
+  .seg button.on { background: #3a3470; }
+  .hash { position: relative; }
+  .hash::before { content: "#"; position: absolute; left: 12px; top: 50%; transform: translateY(-50%); color: var(--muted); font-weight: 700; }
+  .hash input { padding-left: 26px; width: 100%; }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 12px; margin-top: 16px; }
+  .tile { position: relative; aspect-ratio: 1; border-radius: 12px; overflow: hidden; background: #110f20;
+    border: 2px solid transparent; cursor: pointer; }
+  .tile img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .2s; }
+  .tile:hover img { transform: scale(1.04); }
+  .tile .cap { position: absolute; left: 0; right: 0; bottom: 0; padding: 22px 8px 6px; font-size: 12px;
+    background: linear-gradient(0deg, rgba(0,0,0,.85), transparent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .tile .badge { position: absolute; top: 8px; left: 8px; padding: 4px 9px; border-radius: 999px; font-size: 12px;
+    font-weight: 700; background: rgba(0,0,0,.65); }
+  .tile.added { border-color: var(--ok); cursor: default; }
+  .tile.added .badge { background: var(--ok); color: #06261a; }
+  .tile.busy { opacity: .6; cursor: progress; }
+  .tile .x, .tile .edit { position: absolute; top: 6px; width: 30px; height: 30px; padding: 0; border-radius: 50%;
+    background: rgba(0,0,0,.7); font-size: 15px; display: none; }
+  .tile .x { right: 6px; }
+  .tile .edit { right: 42px; }
+  .tile:hover .x, .tile:hover .edit { display: block; }
+  .tile .x:hover { background: var(--bad); }
+  .onscreen .tile { cursor: default; }
+
+  .drop { border: 2px dashed var(--line); border-radius: 14px; padding: 26px; text-align: center; color: var(--muted);
+    transition: .15s; cursor: pointer; }
+  .drop.over { border-color: var(--accent); background: rgba(255,207,63,.06); color: var(--text); }
+  .drop strong { color: var(--text); }
+
+  .notice { background: rgba(255,207,63,.08); border: 1px solid rgba(255,207,63,.35); border-radius: 12px;
+    padding: 12px 14px; color: #ffe9a6; font-size: 14px; }
+  .muted { color: var(--muted); }
+  .two { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+  @media (max-width: 900px) { .two { grid-template-columns: 1fr; } }
+  label.field { display: grid; gap: 6px; margin-bottom: 12px; font-size: 14px; color: var(--muted); }
+  label.check { display: flex; gap: 8px; align-items: center; margin: 8px 0; cursor: pointer; }
+  details { margin-top: 12px; background: #110f20; border-radius: 10px; padding: 10px 14px; }
+  details summary { cursor: pointer; font-weight: 600; }
+  details ol { padding-left: 20px; color: #d6d1ef; }
+  details li { margin: 6px 0; }
+  code { background: #2a2647; padding: 1px 6px; border-radius: 5px; font-size: 13px; }
+  .pill { font-size: 12px; padding: 3px 10px; border-radius: 999px; font-weight: 700; }
+  .pill.ok { background: rgba(61,220,151,.15); color: var(--ok); }
+  .pill.off { background: rgba(255,107,107,.15); color: var(--bad); }
+  .accounts button { margin: 4px 6px 0 0; }
+  #toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(120px); z-index: 50;
+    background: #2c2850; border: 1px solid var(--line); padding: 12px 18px; border-radius: 12px; max-width: 90vw;
+    transition: transform .25s, opacity .25s; box-shadow: 0 10px 30px rgba(0,0,0,.4); opacity: 0; pointer-events: none; }
+  #toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+  #toast.err { background: #4a1f2a; border-color: var(--bad); }
+  .empty-msg { color: var(--muted); padding: 20px 0 4px; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>📸 <span>Hashtag Photo Wall</span></h1>
+  <button onclick="openFolder()">📁 Open photo folder</button>
+  <button class="primary" onclick="openDisplay()">🖥️ Open display window</button>
+</header>
+
+<main>
+  <!-- 1. Instagram search -->
+  <section class="card">
+    <h2>1. Find photos on Instagram <span id="igStatus" class="pill off">not connected</span></h2>
+    <p class="sub">Search a hashtag, then click the photos you want on the big screen. Each one you click is saved to the photo folder.</p>
+    <div id="igNotice" class="notice" style="display:none; margin-bottom:14px">
+      Instagram search isn't connected yet. Follow the steps in <a href="#connect" style="color:var(--accent)">Connect Instagram</a> below.
+      In the meantime, add photos in step 2 by dragging files in or pasting links.
+    </div>
+    <div class="row">
+      <div class="hash grow"><input id="searchTag" type="text" placeholder="youthnight" autocomplete="off"></div>
+      <div class="seg" id="kindSeg">
+        <button data-kind="recent" class="on">Newest</button>
+        <button data-kind="top">Top</button>
+      </div>
+      <button class="primary" id="searchBtn" onclick="search()">Search</button>
+    </div>
+    <label class="check muted" style="margin-top:12px"><input type="checkbox" id="autoRefresh"> Check for new posts every 60 seconds</label>
+    <div id="results" class="grid"></div>
+  </section>
+
+  <!-- 2. Add photos manually -->
+  <section class="card">
+    <h2>2. Add photos another way</h2>
+    <p class="sub">Drag in photos (AirDropped, texted, or saved from Instagram), or paste a link to a photo or Instagram post.</p>
+    <div class="drop" id="drop">
+      <div style="font-size:34px">⬇️</div>
+      <strong>Drop photos here</strong> or click to choose files
+      <input type="file" id="filePick" accept="image/*" multiple hidden>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <input id="linkInput" class="grow" type="url" placeholder="https://www.instagram.com/p/…  or a direct image link">
+      <button onclick="addLink()" id="linkBtn">Add link</button>
+    </div>
+  </section>
+
+  <!-- 3. On screen now -->
+  <section class="card onscreen">
+    <h2>3. On the big screen now <span class="pill ok" id="count">0</span></h2>
+    <p class="sub">These are the photos in your folder, in the order they were added. Hover over a photo to edit its caption (✎) or take it off the screen (✕). Removed photos go to the <code>Removed</code> folder.</p>
+    <div id="onscreen" class="grid"></div>
+  </section>
+
+  <div class="two">
+    <!-- 4. Display settings -->
+    <section class="card">
+      <h2>4. Display settings</h2>
+      <p class="sub">Changes show up on the big screen within a few seconds.</p>
+      <label class="field">Event title<input id="sTitle" type="text"></label>
+      <label class="field">Hashtag shown on screen<input id="sHashtag" type="text"></label>
+      <label class="field">Seconds per photo<input id="sInterval" type="number" min="2" max="120"></label>
+      <label class="check"><input type="checkbox" id="sCaptions"> Show captions and @usernames</label>
+      <label class="check"><input type="checkbox" id="sBanner"> Show the title and hashtag bar</label>
+      <label class="check"><input type="checkbox" id="sNewest"> Show new photos right away (then keep looping)</label>
+    </section>
+
+    <!-- 5. Instagram connection -->
+    <section class="card" id="connect">
+      <h2>5. Connect Instagram (for hashtag search)</h2>
+      <p class="sub">This is only needed for step 1. Your key stays on this Mac in <code>config.json</code>.</p>
+      <label class="field">Access token <span id="tokenHint" class="muted"></span>
+        <input id="cToken" type="password" placeholder="Paste your long-lived access token" autocomplete="off"></label>
+      <div class="row" style="margin-bottom:12px">
+        <button onclick="saveConfig(true)">Save token &amp; find my account</button>
+      </div>
+      <div id="accounts" class="accounts"></div>
+      <label class="field">Instagram Business account ID<input id="cUser" type="text" placeholder="1784…"></label>
+      <label class="field">Graph API version (optional)<input id="cVersion" type="text" placeholder="leave blank for the default, e.g. v23.0"></label>
+      <button class="primary" onclick="saveConfig(false)">Save</button>
+      <details>
+        <summary>How do I get these? (one-time setup, about 30 minutes)</summary>
+        <ol>
+          <li>In the Instagram app, switch the account to a <b>Professional</b> account (Business or Creator): Settings → Account type and tools.</li>
+          <li>Link it to a <b>Facebook Page</b> (for example, your church or youth group page): Page settings → Linked accounts → Instagram.</li>
+          <li>Go to <a href="https://developers.facebook.com/apps" target="_blank" style="color:var(--accent)">developers.facebook.com/apps</a>, choose <b>Create app</b>, and pick the <b>Business</b> type.</li>
+          <li>Open the <a href="https://developers.facebook.com/tools/explorer/" target="_blank" style="color:var(--accent)">Graph API Explorer</a>, select your app, and add these permissions: <code>instagram_basic</code>, <code>pages_show_list</code>, <code>pages_read_engagement</code>, <code>business_management</code>. Click <b>Generate Access Token</b> and log in.</li>
+          <li>To make the token last about 60 days, open the <a href="https://developers.facebook.com/tools/debug/accesstoken/" target="_blank" style="color:var(--accent)">Access Token Debugger</a>, paste the token, and click <b>Extend Access Token</b>.</li>
+          <li>Paste the token above and click <b>Save token &amp; find my account</b>, then pick your Instagram account.</li>
+          <li>Hashtag search uses Meta's <b>Instagram Public Content Access</b> feature. If you get a permission error, request it in your app's dashboard under App Review → Permissions and Features.</li>
+        </ol>
+        <p class="muted">Limit: 30 different hashtags per 7 days. Searching the same hashtag again doesn't count.</p>
+      </details>
+    </section>
+  </div>
+</main>
+
+<div id="toast"></div>
+
+<script>
+const $ = id => document.getElementById(id);
+let kind = "recent";
+let onScreen = [];
+let lastResults = [];
+const addedKeys = new Set(JSON.parse(localStorage.getItem("addedKeys") || "[]"));
+let displayWin = null;
+
+function esc(s) { return String(s || "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c])); }
+
+let toastTimer;
+function toast(msg, err) {
+  const t = $("toast");
+  t.textContent = msg;
+  t.className = "show" + (err ? " err" : "");
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.className = "", err ? 6000 : 2500);
+}
+
+async function api(path, body) {
+  const res = await fetch(path, {
+    method: body === undefined ? "GET" : "POST",
+    headers: { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const data = await res.json().catch(() => ({ error: "Unexpected response from the app." }));
+  if (!res.ok || data.error) throw new Error(data.error || "Something went wrong.");
+  return data;
+}
+
+function openDisplay() {
+  displayWin = window.open("/display", "photowall-display", "width=1280,height=720");
+  if (!displayWin) { location.href = "/display"; return; }
+  toast("Drag the new window onto the extended screen, then click it and press F for full screen.");
+}
+
+async function openFolder() {
+  try {
+    const r = await api("/api/open-folder", {});
+    if (!navigator.platform.toLowerCase().includes("mac")) toast("Photo folder: " + r.path);
+  } catch (e) { toast(e.message, true); }
+}
+
+// ---------- 1. Instagram search
+document.querySelectorAll("#kindSeg button").forEach(b => b.onclick = () => {
+  document.querySelectorAll("#kindSeg button").forEach(x => x.classList.toggle("on", x === b));
+  kind = b.dataset.kind;
+});
+$("searchTag").addEventListener("keydown", e => { if (e.key === "Enter") search(); });
+
+async function search(quiet) {
+  const tag = $("searchTag").value.trim().replace(/^#/, "");
+  if (!tag) { if (!quiet) toast("Type a hashtag first.", true); return; }
+  $("searchBtn").disabled = true;
+  if (!quiet) $("results").innerHTML = '<div class="empty-msg">Searching #' + esc(tag) + "…</div>";
+  try {
+    const { results } = await api("/api/search", { hashtag: tag, kind });
+    lastResults = results;
+    renderResults();
+  } catch (e) {
+    if (!quiet) $("results").innerHTML = "";
+    toast(e.message, true);
+  } finally { $("searchBtn").disabled = false; }
+}
+
+function renderResults() {
+  const box = $("results");
+  if (!lastResults.length) { box.innerHTML = '<div class="empty-msg">No photos found for that hashtag yet.</div>'; return; }
+  box.innerHTML = "";
+  lastResults.forEach(r => {
+    const tile = document.createElement("div");
+    const added = addedKeys.has(r.key);
+    tile.className = "tile" + (added ? " added" : "");
+    tile.title = r.caption || "";
+    tile.innerHTML = `<img referrerpolicy="no-referrer" loading="lazy" src="${esc(r.image)}" alt="">
+      <span class="badge">${added ? "✓ On screen" : "+ Add"}</span>
+      ${r.caption ? `<div class="cap">${esc(r.caption)}</div>` : ""}`;
+    tile.onclick = () => approve(r, tile);
+    box.appendChild(tile);
+  });
+}
+
+async function approve(r, tile) {
+  if (addedKeys.has(r.key) || tile.classList.contains("busy")) return;
+  tile.classList.add("busy");
+  try {
+    await api("/api/approve", r);
+    addedKeys.add(r.key);
+    localStorage.setItem("addedKeys", JSON.stringify([...addedKeys]));
+    tile.classList.add("added");
+    tile.querySelector(".badge").textContent = "✓ On screen";
+    toast("Added to the big screen!");
+    loadPhotos();
+  } catch (e) { toast(e.message, true); }
+  finally { tile.classList.remove("busy"); }
+}
+
+setInterval(() => { if ($("autoRefresh").checked) search(true); }, 60000);
+
+// ---------- 2. Upload & links
+const drop = $("drop");
+drop.onclick = () => $("filePick").click();
+$("filePick").onchange = e => uploadFiles(e.target.files);
+["dragenter", "dragover"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("over"); }));
+["dragleave", "drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); }));
+drop.addEventListener("drop", e => uploadFiles(e.dataTransfer.files));
+// Let people drop anywhere on the page without the browser opening the image.
+window.addEventListener("dragover", e => e.preventDefault());
+window.addEventListener("drop", e => { if (!drop.contains(e.target)) { e.preventDefault(); uploadFiles(e.dataTransfer.files); } });
+
+async function uploadFiles(files) {
+  const list = [...files].filter(f => f.type.startsWith("image/") || /\.(heic|heif)$/i.test(f.name));
+  if (!list.length) { toast("Those don't look like photos.", true); return; }
+  let ok = 0;
+  for (const f of list) {
+    try {
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": f.type || "application/octet-stream", "X-Filename": encodeURIComponent(f.name) },
+        body: f,
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      ok++;
+    } catch (e) { toast(f.name + ": " + e.message, true); }
+  }
+  if (ok) toast(`Added ${ok} photo${ok > 1 ? "s" : ""} to the big screen!`);
+  $("filePick").value = "";
+  loadPhotos();
+}
+
+$("linkInput").addEventListener("keydown", e => { if (e.key === "Enter") addLink(); });
+async function addLink() {
+  const url = $("linkInput").value.trim();
+  if (!url) return;
+  $("linkBtn").disabled = true;
+  try {
+    const r = await api("/api/link", { url });
+    toast(r.new ? "Added to the big screen!" : "That photo is already on the screen.");
+    $("linkInput").value = "";
+    loadPhotos();
+  } catch (e) { toast(e.message, true); }
+  finally { $("linkBtn").disabled = false; }
+}
+
+// ---------- 3. On screen now
+let photoVersion = "";
+async function loadPhotos() {
+  try {
+    const data = await api("/api/photos");
+    if (data.version === photoVersion) return;
+    photoVersion = data.version;
+    onScreen = data.photos;
+    renderOnScreen();
+  } catch (e) {}
+}
+
+function renderOnScreen() {
+  $("count").textContent = onScreen.length;
+  const box = $("onscreen");
+  if (!onScreen.length) { box.innerHTML = '<div class="empty-msg">No photos yet. Add some above!</div>'; return; }
+  box.innerHTML = "";
+  onScreen.forEach(p => {
+    const tile = document.createElement("div");
+    tile.className = "tile";
+    const who = p.username ? "@" + p.username + " " : "";
+    tile.innerHTML = `<img loading="lazy" src="${p.url}" alt="">
+      <button class="edit" title="Edit caption">✎</button>
+      <button class="x" title="Remove from screen">✕</button>
+      ${(who || p.caption) ? `<div class="cap">${esc(who + (p.caption || ""))}</div>` : ""}`;
+    tile.querySelector(".x").onclick = () => removePhoto(p);
+    tile.querySelector(".edit").onclick = () => editCaption(p);
+    box.appendChild(tile);
+  });
+}
+
+async function removePhoto(p) {
+  try {
+    await api("/api/remove", { name: p.name });
+    toast("Removed from the screen.");
+    loadPhotos();
+  } catch (e) { toast(e.message, true); }
+}
+
+async function editCaption(p) {
+  const username = prompt("Instagram username (optional):", p.username || "");
+  if (username === null) return;
+  const caption = prompt("Caption (optional):", p.caption || "");
+  if (caption === null) return;
+  try {
+    await api("/api/caption", { name: p.name, username, caption });
+    photoVersion = "";
+    loadPhotos();
+  } catch (e) { toast(e.message, true); }
+}
+
+setInterval(loadPhotos, 3000);
+
+// ---------- 4. Settings
+const settingFields = { title: "sTitle", hashtag: "sHashtag", interval: "sInterval",
+  showCaptions: "sCaptions", showBanner: "sBanner", newestFirst: "sNewest" };
+
+async function loadSettings() {
+  const s = await api("/api/settings");
+  for (const [key, id] of Object.entries(settingFields)) {
+    const el = $(id);
+    if (el.type === "checkbox") el.checked = !!s[key]; else el.value = s[key];
+  }
+  if (!$("searchTag").value) $("searchTag").value = String(s.hashtag || "").replace(/^#/, "");
+}
+
+let saveTimer;
+for (const [key, id] of Object.entries(settingFields)) {
+  $(id).addEventListener($(id).type === "checkbox" ? "change" : "input", () => {
+    clearTimeout(saveTimer);
+    saveTimer = setTimeout(saveSettings, 400);
+  });
+}
+async function saveSettings() {
+  const body = {};
+  for (const [key, id] of Object.entries(settingFields)) {
+    const el = $(id);
+    body[key] = el.type === "checkbox" ? el.checked : el.type === "number" ? Number(el.value) : el.value;
+  }
+  try { await api("/api/settings", body); toast("Settings saved."); } catch (e) { toast(e.message, true); }
+}
+
+// ---------- 5. Instagram connection
+async function loadConfig() {
+  const c = await api("/api/config");
+  $("cUser").value = c.ig_user_id || "";
+  $("cVersion").value = c.graph_version || "";
+  $("tokenHint").textContent = c.has_token ? "(saved, ends in " + c.token_hint + ")" : "";
+  $("igStatus").textContent = c.connected ? "connected" : "not connected";
+  $("igStatus").className = "pill " + (c.connected ? "ok" : "off");
+  $("igNotice").style.display = c.connected ? "none" : "block";
+}
+
+async function saveConfig(findAccounts) {
+  try {
+    await api("/api/config", { access_token: $("cToken").value, ig_user_id: $("cUser").value, graph_version: $("cVersion").value });
+    $("cToken").value = "";
+    await loadConfig();
+    if (!findAccounts) { toast("Saved."); return; }
+    const { accounts } = await api("/api/accounts", {});
+    const box = $("accounts");
+    if (!accounts.length) {
+      box.innerHTML = '<p class="notice">No Instagram Business account found. Make sure the Instagram account is Professional, linked to a Facebook Page, and that you allowed the Page when you created the token.</p>';
+      return;
+    }
+    box.innerHTML = '<p class="muted" style="margin:0 0 4px">Click your Instagram account:</p>';
+    accounts.forEach(a => {
+      const b = document.createElement("button");
+      b.textContent = "@" + (a.username || a.id) + (a.page ? " (" + a.page + ")" : "");
+      b.onclick = async () => { $("cUser").value = a.id; await saveConfig(false); box.innerHTML = ""; toast("Instagram connected! Try a search in step 1."); };
+      box.appendChild(b);
+    });
+    if (accounts.length === 1) box.querySelector("button").click();
+  } catch (e) { toast(e.message, true); }
+}
+
+loadSettings();
+loadConfig();
+loadPhotos();
+</script>
+</body>
+</html>

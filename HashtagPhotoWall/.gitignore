@@ -1,0 +1,8 @@
+# Your Instagram key and local settings stay on your Mac
+config.json
+settings.json
+*.tmp
+# Event photos are not saved to git
+ApprovedPhotos/*
+!ApprovedPhotos/.gitkeep
+__pycache__/
