@@ -8,6 +8,10 @@ You choose every photo, so nothing appears on the big screen unless you approve 
 2. Each photo you click is saved in the `ApprovedPhotos` folder.
 3. The display window on the extended screen picks up new photos within a few seconds and fades through them in a slideshow.
 
+| Control panel (your laptop) | Display (projector / TV) |
+|---|---|
+| ![Control panel](screenshots/control-panel.png) | ![Display](screenshots/display.png) |
+
 You can also drag in photos people AirDrop or text you, paste a link, or drop files straight into the `ApprovedPhotos` folder in Finder.
 
 ---
